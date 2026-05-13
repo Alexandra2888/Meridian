@@ -11,3 +11,10 @@ data/*.db
 data/*.db-journal
 evals/results/*
 !evals/results/.gitkeep
+
+# OS
+.DS_Store
+**/.DS_Store
+
+# Local data exports / imports
+*.csv

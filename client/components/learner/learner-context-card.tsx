@@ -9,6 +9,8 @@ import type { EnrolmentStatus, LearnerProfile } from "@/lib/types";
 interface LearnerContextCardProps {
   learner: LearnerProfile | null;
   loading?: boolean;
+  /** Surfaced in red when the CRM lookup failed; orchestrator still runs in degraded mode. */
+  errorMessage?: string;
 }
 
 const STATUS_STYLES: Record<EnrolmentStatus, string> = {
@@ -27,7 +29,22 @@ const STATUS_STYLES: Record<EnrolmentStatus, string> = {
 export function LearnerContextCard({
   learner,
   loading,
+  errorMessage,
 }: LearnerContextCardProps) {
+  if (errorMessage && !learner) {
+    return (
+      <Card className="border-state-error/40 bg-card p-4">
+        <p className="text-small text-state-error">
+          Couldn&apos;t load learner profile: {errorMessage}
+        </p>
+        <p className="mt-1 text-micro text-text-muted">
+          The orchestrator will run in degraded mode — responses will be more
+          generic.
+        </p>
+      </Card>
+    );
+  }
+
   if (loading || !learner) {
     return (
       <Card className="border-border-subtle bg-card p-4">

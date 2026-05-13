@@ -42,6 +42,11 @@ export interface TraceStep {
   durationMs?: number;
 }
 
+export interface ChatTurnHistory {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface TurnFinalMetadata {
   turnId: string;
   conversationId: string;
@@ -68,8 +73,11 @@ export type SseEvent =
         agents_invoked: AgentName[];
         total_latency_ms: number;
         cost_usd: number;
+        tokens_in?: number;
+        tokens_out?: number;
         conversation_id: string;
         turn_id: string;
+        learner?: LearnerProfile | null;
       };
     }
   | { type: "done"; data: null };

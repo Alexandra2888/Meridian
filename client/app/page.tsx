@@ -2,24 +2,8 @@ import { Sparkles } from "lucide-react";
 
 import { ChatShell } from "@/components/chat/chat-shell";
 import { LearnerContextCard } from "@/components/learner/learner-context-card";
+import { fetchLearnerProfile } from "@/lib/api";
 import type { LearnerProfile } from "@/lib/types";
-
-/**
- * Stub learner used until the FastAPI `/learner/{id}` endpoint ships. Once
- * the API is live, replace this with `await fetchLearnerProfile(...)` from
- * `lib/api.ts`. The shape matches `LearnerProfile`, so the UI flips over
- * automatically. RFC §0.1 (stubbed-vs-real boundary).
- */
-const STUB_LEARNER: LearnerProfile = {
-  learner_id: "stub-001",
-  name: "Adaeze Okafor",
-  email: "adaeze.o@learner.nexford.org",
-  enrolment_status: "applied",
-  program: "BBA Data Analytics",
-  interests: ["data", "marketing", "product"],
-  career_goals: ["data analyst", "product analyst"],
-  country: "Nigeria",
-};
 
 const CANONICAL_PROMPTS = [
   "What program is right for me, and what jobs does it lead to once I graduate?",
@@ -27,12 +11,43 @@ const CANONICAL_PROMPTS = [
   "What does the career path look like for data analytics graduates?",
 ];
 
-export default function Page() {
+/**
+ * Default learner used when the page is opened without `?learner=…`. Matches a
+ * stub-CRM seed so the page renders with data even when CRM_PROVIDER=stub on
+ * the server. With CRM_PROVIDER=hubspot, override via the search param using
+ * a real HubSpot contact id.
+ */
+const DEFAULT_LEARNER_ID =
+  process.env.NEXT_PUBLIC_DEFAULT_LEARNER_ID ?? "stub-001";
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ learner?: string }>;
+}) {
+  const { learner: learnerParam } = await searchParams;
+  const learnerId = learnerParam?.trim() || DEFAULT_LEARNER_ID;
+
+  let profile: LearnerProfile | null = null;
+  let loadError: string | null = null;
+  try {
+    profile = await fetchLearnerProfile(learnerId, { cache: "no-store" });
+  } catch (err) {
+    loadError = err instanceof Error ? err.message : "Failed to load profile";
+  }
+
   return (
     <main className="flex flex-1 flex-col min-h-0">
       <Header />
       <ChatShell
-        header={<LearnerContextCard learner={STUB_LEARNER} />}
+        learnerId={learnerId}
+        header={
+          <LearnerContextCard
+            learner={profile}
+            loading={false}
+            errorMessage={loadError ?? undefined}
+          />
+        }
         emptyState={<EmptyState />}
       />
     </main>
