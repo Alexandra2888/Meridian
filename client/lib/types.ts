@@ -1,0 +1,75 @@
+/**
+ * Shared TS types that mirror the FastAPI / Pydantic schemas on the API side.
+ * Source of truth lives in the RFC (§4.6, §4.7). When the API ships, generate
+ * these from the OpenAPI schema instead of hand-mirroring.
+ */
+
+export type AgentName = "discovery" | "career";
+
+export type EnrolmentStatus =
+  | "prospect"
+  | "applied"
+  | "enrolled"
+  | "graduated";
+
+export interface LearnerProfile {
+  learner_id: string;
+  name: string;
+  email: string;
+  enrolment_status: EnrolmentStatus;
+  program: string | null;
+  interests: string[];
+  career_goals: string[];
+  country: string | null;
+}
+
+/** A node in the LangGraph orchestrator. Drives the trace panel. */
+export type OrchestratorNode =
+  | "load_context"
+  | "plan"
+  | "discovery_agent"
+  | "career_agent"
+  | "synthesize"
+  | "persist";
+
+export type TraceStepStatus = "pending" | "running" | "done" | "error";
+
+export interface TraceStep {
+  node: OrchestratorNode;
+  status: TraceStepStatus;
+  startedAt?: number;
+  finishedAt?: number;
+  durationMs?: number;
+}
+
+export interface TurnFinalMetadata {
+  turnId: string;
+  conversationId: string;
+  agentsInvoked: AgentName[];
+  totalLatencyMs: number;
+  costUsd: number;
+}
+
+/** SSE event protocol — RFC §4.7. */
+export type SseEvent =
+  | {
+      type: "status";
+      data: {
+        node: OrchestratorNode;
+        status: "started" | "finished";
+        duration_ms?: number;
+      };
+    }
+  | { type: "delta"; data: { content: string } }
+  | { type: "error"; data: { message: string; recoverable: boolean } }
+  | {
+      type: "final";
+      data: {
+        agents_invoked: AgentName[];
+        total_latency_ms: number;
+        cost_usd: number;
+        conversation_id: string;
+        turn_id: string;
+      };
+    }
+  | { type: "done"; data: null };
