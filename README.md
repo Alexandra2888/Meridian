@@ -1,31 +1,36 @@
-# Meridian — Server
+# Meridian
 
-FastAPI + LangGraph backend for the Meridian learner orchestration layer.
-See [`docs/rfc.md`](../docs/rfc.md) for the full design rationale.
+> **Meridian**: the line along which disconnected things align. The orchestration layer that pulls independent learner-facing agents onto a single path, so one learner question gets one coherent answer.
 
-## Stack
+A learner asking a compound question — _"What program is right for me, and what jobs does it lead to once I graduate?"_ — should not have to bounce between unconnected chat agents. Meridian routes the query across a Discovery and a Career agent in parallel, pulls live CRM context from HubSpot, and synthesizes a **single** streamed response.
 
-| Layer            | Choice                                       |
-| ---------------- | -------------------------------------------- |
-| Language         | Python 3.12                                  |
-| Web              | FastAPI + uvicorn                            |
-| Orchestration    | LangGraph (`astream_events(version="v2")`)  |
-| LLMs             | OpenAI via `langchain-openai`                |
-| CRM              | HubSpot (real) + stub fallback               |
-| ORM / migrations | SQLAlchemy 2.0 async + Alembic               |
-| Database         | SQLite (local + Fly Volume in prod)          |
-| Resilience       | `httpx`, `tenacity`, custom circuit breaker  |
-| Observability    | `structlog` + optional LangSmith             |
-| Pkg / venv       | `uv`                                         |
+The design rationale lives in [`docs/rfc.md`](docs/rfc.md). This README is operator-facing — how to run it, where the pieces live.
+
+---
+
+## What's in the box
+
+| Folder    | Stack                                                                       |
+| --------- | --------------------------------------------------------------------------- |
+| `server/` | FastAPI + LangGraph orchestrator, SQLAlchemy/Alembic, OpenAI, HubSpot       |
+| `client/` | Next.js 16 (App Router) + React 19, Tailwind v4, shadcn/ui, Zustand         |
+| `docs/`   | `rfc.md` — full design RFC, decisions + alternatives considered             |
+
+The server speaks SSE; the client renders the orchestration trace as it streams.
+
+---
 
 ## Quick start
+
+Run both halves in two terminals. The Next.js route handlers proxy through to FastAPI, so the browser never talks to the backend directly.
+
+### 1. Server (`localhost:8000`)
 
 ```bash
 cd server
 uv sync
-cp .env.example .env
-# fill in OPENAI_API_KEY; CRM_PROVIDER=stub works without HubSpot
-uv run alembic upgrade head
+cp .env.example .env             # fill in OPENAI_API_KEY; CRM_PROVIDER=stub works offline
+uv run alembic upgrade head      # creates messages + conversations tables
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
@@ -36,81 +41,34 @@ curl http://localhost:8000/health
 curl http://localhost:8000/learner/stub-001
 ```
 
-Stream a chat (the canonical compound query from the RFC):
+See [`server/README.md`](server/README.md) for the full endpoint table, CRM provider switch, and layout.
+
+### 2. Client (`localhost:3000`)
 
 ```bash
-curl -N -X POST http://localhost:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "learner_id": "stub-001",
-    "message": "What program is right for me, and what jobs does it lead to once I graduate?"
-  }'
+cd client
+pnpm install
+cp .env.example .env             # API_URL=http://localhost:8000 by default
+pnpm dev
 ```
 
-Expect to see `status` events for each LangGraph node, `delta` events with
-streamed synthesis tokens, a `final` event with metadata, and a `done`
-terminator.
+Open <http://localhost:3000>. Pick a learner from the header, ask a question, and watch the orchestration trace render alongside the streamed answer.
 
-## Endpoints
-
-| Method | Path                  | Purpose                                                         |
-| ------ | --------------------- | --------------------------------------------------------------- |
-| GET    | `/health`             | Liveness + CRM provider status + configured model names         |
-| GET    | `/learner/{id}`       | Resolve a `LearnerProfile` via the active CRM client            |
-| POST   | `/chat`               | SSE stream: `status`, `delta`, `error`, `final`, `done` events  |
-
-## Switching CRM provider
-
-```bash
-# Real HubSpot — requires the developer-portal setup in RFC §4.6
-CRM_PROVIDER=hubspot
-HUBSPOT_ACCESS_TOKEN=pat-...
-
-# Offline / eval mode — same interface, JSON-backed
-CRM_PROVIDER=stub
-```
-
-The factory in `app/clients/crm/base.py` is the only place that branches on the
-env var; nothing else in the orchestrator knows the difference.
+---
 
 ## Tests
 
-```bash
-uv run pytest
-```
+| Suite             | What it covers                                                                                       | Command                                  |
+| ----------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Server (pytest)   | Repo CRUD, conversation API, title generation (LLM mocked), routing, schemas, stub CRM, HubSpot CB   | `cd server && uv run pytest`             |
+| Client (e2e)      | Happy path: load → send → trace + cost badges → reload persists → rename → delete → mobile + 404     | `cd client && pnpm test:e2e`             |
 
-Test layers:
-- `test_stub_crm.py` — stub CRM correctness
-- `test_hubspot_circuit_breaker.py` — failure mode + circuit breaker (no network)
-- `test_routing.py` — pure routing function
-- `test_schemas.py` — Pydantic contracts
+The Playwright suite spawns both servers via its `webServer` config and reuses already-running ones if present.
 
-LLM-touching tests are deliberately out of scope here — that surface lives in
-`evals/` (Phase 3).
+---
 
-## Layout
+## Reading order
 
-```
-server/
-├── app/
-│   ├── main.py                    # FastAPI app + endpoints
-│   ├── config.py                  # pydantic-settings
-│   ├── api/sse.py                 # LangGraph events → SSE wire protocol
-│   ├── clients/
-│   │   ├── llm.py                 # ChatOpenAI factory + cost estimation
-│   │   └── crm/                   # CRMClient interface + stub + HubSpot
-│   ├── orchestrator/
-│   │   ├── graph.py               # LangGraph wiring + routing
-│   │   ├── state.py               # OrchestratorState (TypedDict + reducers)
-│   │   ├── nodes/                 # load_context, plan, synthesize, persist
-│   │   └── agents/                # discovery, career
-│   ├── db/                        # SQLAlchemy models, session, repository
-│   ├── data/                      # programs.json, careers.json, learners.json
-│   ├── schemas/                   # Pydantic: LearnerProfile, ChatRequest, events
-│   └── observability/tracing.py   # structlog + LangSmith opt-in
-├── alembic/                       # migrations
-├── tests/
-├── Dockerfile
-├── pyproject.toml
-└── .env.example
-```
+1. [`docs/rfc.md`](docs/rfc.md) — design rationale, alternatives considered, scope cuts. Start here if you want to understand *why* the system is shaped this way.
+2. [`server/README.md`](server/README.md) — operator runbook for the orchestrator: endpoints, env vars, layout, CRM switch.
+3. [`client/README.md`](client/README.md) — operator runbook for the chat UI.
