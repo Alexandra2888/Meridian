@@ -19,7 +19,7 @@ from app.clients.crm import get_crm_client
 from app.config import get_settings
 from app.db.session import dispose_db, init_db
 from app.observability import configure_logging, get_logger
-from app.schemas import ChatRequest, LearnerProfile
+from app.schemas import ChatRequest, LearnerProfile, LearnerSummary
 
 configure_logging()
 log = get_logger(__name__)
@@ -66,6 +66,14 @@ async def health() -> dict:
             "synthesizer": settings.model_synthesizer,
         },
     }
+
+
+@app.get("/learners", response_model=list[LearnerSummary])
+async def list_learners(limit: int = 25) -> list[LearnerSummary]:
+    """Lightweight list backing the FE learner-picker. RFC §0.1."""
+
+    crm = get_crm_client()
+    return await crm.list_learners(limit=limit)
 
 
 @app.get("/learner/{learner_id}", response_model=LearnerProfile)

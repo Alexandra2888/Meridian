@@ -11,13 +11,18 @@ from functools import lru_cache
 from typing import Protocol
 
 from app.config import get_settings
-from app.schemas.learner import LearnerProfile
+from app.schemas.learner import LearnerProfile, LearnerSummary
 
 
 class CRMClient(Protocol):
     """The only contract the orchestrator depends on."""
 
     async def get_learner(self, learner_id: str) -> LearnerProfile: ...
+
+    async def list_learners(self, limit: int = 25) -> list[LearnerSummary]:
+        """Lightweight listing for the FE picker. Bounded so a HubSpot portal
+        with many contacts doesn't blow the response."""
+        ...
 
     async def health(self) -> bool:
         """Cheap signal for /health and the demo fallback decision."""

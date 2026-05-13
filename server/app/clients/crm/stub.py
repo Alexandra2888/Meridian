@@ -7,7 +7,7 @@ incident on demo day. Same `CRMClient` interface as `HubSpotCRMClient`.
 from __future__ import annotations
 
 from app.data import learners
-from app.schemas.learner import LearnerProfile
+from app.schemas.learner import LearnerProfile, LearnerSummary
 
 
 class StubCRMClient:
@@ -22,6 +22,17 @@ class StubCRMClient:
         if learner_id in self._by_id:
             return self._by_id[learner_id]
         return next(iter(self._by_id.values()))
+
+    async def list_learners(self, limit: int = 25) -> list[LearnerSummary]:
+        return [
+            LearnerSummary(
+                learner_id=p.learner_id,
+                name=p.name,
+                enrolment_status=p.enrolment_status,
+                program=p.program,
+            )
+            for p in list(self._by_id.values())[:limit]
+        ]
 
     async def health(self) -> bool:
         return True

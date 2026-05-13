@@ -1,4 +1,4 @@
-import type { LearnerProfile } from "@/lib/types";
+import type { LearnerProfile, LearnerSummary } from "@/lib/types";
 
 /**
  * Server-side base URL for the FastAPI orchestrator. Read via `API_URL` env;
@@ -23,4 +23,18 @@ export async function fetchLearnerProfile(
     throw new Error(`Failed to load learner ${learnerId}: ${res.status}`);
   }
   return (await res.json()) as LearnerProfile;
+}
+
+/** Fetches the picker list from the FastAPI `/learners` endpoint. */
+export async function fetchLearnerSummaries(
+  init?: RequestInit,
+): Promise<LearnerSummary[]> {
+  const res = await fetch(apiUrl(`/learners`), {
+    ...init,
+    headers: { Accept: "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load learners: ${res.status}`);
+  }
+  return (await res.json()) as LearnerSummary[];
 }

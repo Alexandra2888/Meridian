@@ -6,7 +6,7 @@ from app.schemas.events import (
     SSEEvent,
     StatusEvent,
 )
-from app.schemas.learner import LearnerProfile
+from app.schemas.learner import LearnerProfile, LearnerSummary
 from app.schemas.orchestrator import (
     AgentName,
     ChatRequest,
@@ -28,6 +28,7 @@ __all__ = [
     "ErrorEvent",
     "FinalEvent",
     "LearnerProfile",
+    "LearnerSummary",
     "PlanOutput",
     "Route",
     "SSEEvent",

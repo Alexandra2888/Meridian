@@ -2,8 +2,9 @@ import { Sparkles } from "lucide-react";
 
 import { ChatShell } from "@/components/chat/chat-shell";
 import { LearnerContextCard } from "@/components/learner/learner-context-card";
-import { fetchLearnerProfile } from "@/lib/api";
-import type { LearnerProfile } from "@/lib/types";
+import { LearnerSelector } from "@/components/learner/learner-selector";
+import { fetchLearnerProfile, fetchLearnerSummaries } from "@/lib/api";
+import type { LearnerProfile, LearnerSummary } from "@/lib/types";
 
 const CANONICAL_PROMPTS = [
   "What program is right for me, and what jobs does it lead to once I graduate?",
@@ -11,12 +12,6 @@ const CANONICAL_PROMPTS = [
   "What does the career path look like for data analytics graduates?",
 ];
 
-/**
- * Default learner used when the page is opened without `?learner=…`. Matches a
- * stub-CRM seed so the page renders with data even when CRM_PROVIDER=stub on
- * the server. With CRM_PROVIDER=hubspot, override via the search param using
- * a real HubSpot contact id.
- */
 const DEFAULT_LEARNER_ID =
   process.env.NEXT_PUBLIC_DEFAULT_LEARNER_ID ?? "stub-001";
 
@@ -26,7 +21,19 @@ export default async function Page({
   searchParams: Promise<{ learner?: string }>;
 }) {
   const { learner: learnerParam } = await searchParams;
-  const learnerId = learnerParam?.trim() || DEFAULT_LEARNER_ID;
+
+  // Pull the picker list first — if `?learner=` isn't set we default to the
+  // first learner returned (typically the first HubSpot contact or the first
+  // stub) instead of an arbitrary id that may 404.
+  let learners: LearnerSummary[] = [];
+  try {
+    learners = await fetchLearnerSummaries({ cache: "no-store" });
+  } catch {
+    /* selector just hides itself if the list fetch fails */
+  }
+
+  const learnerId =
+    learnerParam?.trim() || learners[0]?.learner_id || DEFAULT_LEARNER_ID;
 
   let profile: LearnerProfile | null = null;
   let loadError: string | null = null;
@@ -38,7 +45,16 @@ export default async function Page({
 
   return (
     <main className="flex flex-1 flex-col min-h-0">
-      <Header />
+      <Header
+        selector={
+          learners.length > 0 ? (
+            <LearnerSelector
+              learners={learners}
+              currentLearnerId={learnerId}
+            />
+          ) : null
+        }
+      />
       <ChatShell
         learnerId={learnerId}
         header={
@@ -54,7 +70,7 @@ export default async function Page({
   );
 }
 
-function Header() {
+function Header({ selector }: { selector?: React.ReactNode }) {
   return (
     <header className="border-b border-border-subtle bg-surface-sunken">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-3 md:px-6">
@@ -64,12 +80,13 @@ function Header() {
         >
           <span className="font-mono text-small font-semibold">M</span>
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate font-medium">Meridian</p>
           <p className="truncate text-micro text-text-subtle font-mono uppercase tracking-wider">
             learner orchestration · v1
           </p>
         </div>
+        {selector ? <div className="shrink-0">{selector}</div> : null}
       </div>
     </header>
   );

@@ -35,7 +35,7 @@ from tenacity import (
 )
 
 from app.clients.crm.base import degraded_profile
-from app.schemas.learner import EnrolmentStatus, LearnerProfile
+from app.schemas.learner import EnrolmentStatus, LearnerProfile, LearnerSummary
 
 log = structlog.get_logger(__name__)
 
@@ -163,6 +163,39 @@ class HubSpotCRMClient:
         except Exception:  # noqa: BLE001
             return False
         return True
+
+    async def list_learners(self, limit: int = 25) -> list[LearnerSummary]:
+        if self._cb.is_open():
+            return []
+        try:
+            page = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._client.crm.contacts.basic_api.get_page,
+                    limit=min(limit, 100),  # HubSpot caps at 100 per page
+                    properties=CONTACT_PROPERTIES,
+                ),
+                timeout=self._timeout,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._cb.record_failure()
+            log.warning("crm_list_failed", exc_type=type(exc).__name__)
+            return []
+
+        self._cb.record_success()
+        results: list[LearnerSummary] = []
+        for contact in getattr(page, "results", []) or []:
+            props = getattr(contact, "properties", {}) or {}
+            first = (props.get("firstname") or "").strip()
+            last = (props.get("lastname") or "").strip()
+            results.append(
+                LearnerSummary(
+                    learner_id=str(getattr(contact, "id", "") or ""),
+                    name=f"{first} {last}".strip() or "(unnamed)",
+                    enrolment_status=_enrolment(props.get("meridian_enrolment_status")),
+                    program=props.get("meridian_program") or None,
+                )
+            )
+        return results
 
     async def _fetch_contact(self, learner_id: str) -> Any:
         async for attempt in AsyncRetrying(

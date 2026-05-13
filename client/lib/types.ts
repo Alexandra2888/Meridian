@@ -23,6 +23,13 @@ export interface LearnerProfile {
   country: string | null;
 }
 
+export interface LearnerSummary {
+  learner_id: string;
+  name: string;
+  enrolment_status: EnrolmentStatus;
+  program: string | null;
+}
+
 /** A node in the LangGraph orchestrator. Drives the trace panel. */
 export type OrchestratorNode =
   | "load_context"

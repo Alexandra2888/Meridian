@@ -21,3 +21,12 @@ class LearnerProfile(BaseModel):
     # an empty profile. Surfaced in the synthesis prompt so the response can
     # acknowledge the missing context instead of pretending it was loaded.
     degraded: bool = False
+
+
+class LearnerSummary(BaseModel):
+    """Lightweight shape for the FE picker — RFC §0.1 (demo-pickable learners)."""
+
+    learner_id: str
+    name: str
+    enrolment_status: EnrolmentStatus
+    program: str | None = None
