@@ -1,0 +1,138 @@
+[
+  {
+    "id": "business-analyst",
+    "title": "Business Analyst",
+    "median_salary_usd_band": "30k-55k",
+    "demand": "high",
+    "skills": ["sql", "excel", "stakeholder communication", "requirements"],
+    "notes": "Common first role for BBA graduates with analytics exposure. Demand is steady across markets."
+  },
+  {
+    "id": "data-analyst",
+    "title": "Data Analyst",
+    "median_salary_usd_band": "35k-65k",
+    "demand": "high",
+    "skills": ["sql", "python or r", "data visualization", "statistics"],
+    "notes": "Frequently a stepping stone to data science or analytics engineering. Remote-friendly."
+  },
+  {
+    "id": "bi-developer",
+    "title": "BI Developer",
+    "median_salary_usd_band": "40k-75k",
+    "demand": "moderate",
+    "skills": ["sql", "data warehousing", "Looker or Power BI"],
+    "notes": "Ops-adjacent analytics role. Strong fit for graduates who like building reusable assets."
+  },
+  {
+    "id": "marketing-manager",
+    "title": "Marketing Manager",
+    "median_salary_usd_band": "40k-75k",
+    "demand": "moderate",
+    "skills": ["campaign strategy", "budgeting", "creative direction", "analytics"],
+    "notes": "Mid-career destination for digital marketing graduates with 3+ years of experience."
+  },
+  {
+    "id": "growth-marketer",
+    "title": "Growth Marketer",
+    "median_salary_usd_band": "45k-90k",
+    "demand": "high",
+    "skills": ["paid acquisition", "experimentation", "analytics", "lifecycle"],
+    "notes": "Common in B2B SaaS and consumer subscription. Skills overlap heavily with analytics."
+  },
+  {
+    "id": "content-strategist",
+    "title": "Content Strategist",
+    "median_salary_usd_band": "35k-65k",
+    "demand": "moderate",
+    "skills": ["editorial planning", "seo", "brand voice"],
+    "notes": "Good fit for graduates with strong writing and a marketing foundation."
+  },
+  {
+    "id": "fintech-product-analyst",
+    "title": "FinTech Product Analyst",
+    "median_salary_usd_band": "45k-80k",
+    "demand": "high",
+    "skills": ["sql", "product analytics", "finance basics"],
+    "notes": "Hybrid analyst-PM role; rapidly growing in payments and lending."
+  },
+  {
+    "id": "payments-ops",
+    "title": "Payments Operations Analyst",
+    "median_salary_usd_band": "35k-60k",
+    "demand": "moderate",
+    "skills": ["payments lifecycle", "reconciliation", "compliance basics"],
+    "notes": "Common operational role at fintech and marketplaces."
+  },
+  {
+    "id": "junior-investment-analyst",
+    "title": "Junior Investment Analyst",
+    "median_salary_usd_band": "45k-90k",
+    "demand": "moderate",
+    "skills": ["financial modeling", "valuation", "research"],
+    "notes": "Competitive entry; CFA Level I helps."
+  },
+  {
+    "id": "ai-product-manager",
+    "title": "AI Product Manager",
+    "median_salary_usd_band": "90k-160k",
+    "demand": "very high",
+    "skills": ["product discovery", "ml literacy", "evals", "stakeholder mgmt"],
+    "notes": "MBA with AI concentration is a strong fit; experience with AI products is the limiting factor."
+  },
+  {
+    "id": "ai-strategy-lead",
+    "title": "AI Strategy Lead",
+    "median_salary_usd_band": "100k-180k",
+    "demand": "high",
+    "skills": ["strategy", "ai literacy", "change management"],
+    "notes": "Common in mid-to-large enterprises adopting AI; consulting backgrounds dominate today."
+  },
+  {
+    "id": "head-of-data",
+    "title": "Head of Data",
+    "median_salary_usd_band": "120k-200k",
+    "demand": "high",
+    "skills": ["leadership", "data strategy", "platform"],
+    "notes": "Senior IC-to-leader role; usually 8+ years of experience."
+  },
+  {
+    "id": "operations-manager",
+    "title": "Operations Manager",
+    "median_salary_usd_band": "55k-95k",
+    "demand": "high",
+    "skills": ["process design", "people management", "metrics"],
+    "notes": "Generalist MBA classic. Industry-agnostic."
+  },
+  {
+    "id": "consultant",
+    "title": "Management Consultant",
+    "median_salary_usd_band": "80k-160k",
+    "demand": "moderate",
+    "skills": ["structured problem solving", "presentations", "modeling"],
+    "notes": "Tier-1 firms competitive; boutique and regional firms very accessible."
+  },
+  {
+    "id": "general-manager",
+    "title": "General Manager",
+    "median_salary_usd_band": "100k-200k",
+    "demand": "moderate",
+    "skills": ["P&L ownership", "leadership", "strategy"],
+    "notes": "Senior role typically reached 8-12 years post-MBA."
+  },
+  {
+    "id": "associate-pm",
+    "title": "Associate Product Manager",
+    "median_salary_usd_band": "55k-95k",
+    "demand": "high",
+    "skills": ["discovery", "writing", "user research", "metrics"],
+    "notes": "Common entry-level PM track at tech and SaaS companies."
+  },
+  {
+    "id": "product-analyst",
+    "title": "Product Analyst",
+    "median_salary_usd_band": "50k-85k",
+    "demand": "high",
+    "skills": ["sql", "experimentation", "product instrumentation"],
+    "notes": "Bridge role between analytics and product; strong growth into PM."
+  }
+]

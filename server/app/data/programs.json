@@ -1,0 +1,56 @@
+[
+  {
+    "id": "bba-data-analytics",
+    "name": "BBA in Data Analytics",
+    "level": "undergraduate",
+    "duration_months": 36,
+    "description": "Bachelor of Business Administration with specialization in data analytics. Covers SQL, statistics, business intelligence, data visualization, and analytics-driven decision making.",
+    "interests": ["data", "analytics", "business", "math"],
+    "career_pathways": ["business-analyst", "data-analyst", "bi-developer"]
+  },
+  {
+    "id": "bba-marketing",
+    "name": "BBA in Digital Marketing",
+    "level": "undergraduate",
+    "duration_months": 36,
+    "description": "BBA focused on digital marketing strategy, performance advertising, brand, content, and marketing analytics.",
+    "interests": ["marketing", "creative", "communication", "data"],
+    "career_pathways": ["marketing-manager", "growth-marketer", "content-strategist"]
+  },
+  {
+    "id": "bba-fintech",
+    "name": "BBA in FinTech",
+    "level": "undergraduate",
+    "duration_months": 36,
+    "description": "BBA combining finance fundamentals with payments, blockchain basics, and fintech product strategy.",
+    "interests": ["finance", "technology", "business"],
+    "career_pathways": ["fintech-product-analyst", "payments-ops", "junior-investment-analyst"]
+  },
+  {
+    "id": "mba-ai-business",
+    "name": "MBA in AI for Business",
+    "level": "graduate",
+    "duration_months": 18,
+    "description": "MBA with concentration in AI strategy, applied ML for business problems, and organizational adoption of AI.",
+    "interests": ["ai", "leadership", "strategy", "business", "data"],
+    "career_pathways": ["ai-product-manager", "ai-strategy-lead", "head-of-data"]
+  },
+  {
+    "id": "mba-management",
+    "name": "MBA in Advanced Management",
+    "level": "graduate",
+    "duration_months": 18,
+    "description": "Generalist MBA emphasizing leadership, operations, and strategy across functions.",
+    "interests": ["leadership", "strategy", "operations"],
+    "career_pathways": ["operations-manager", "consultant", "general-manager"]
+  },
+  {
+    "id": "cert-product-management",
+    "name": "Certificate in Product Management",
+    "level": "certificate",
+    "duration_months": 4,
+    "description": "Short professional certificate in product management fundamentals: discovery, prioritization, delivery, metrics.",
+    "interests": ["product", "technology", "business"],
+    "career_pathways": ["associate-pm", "product-analyst"]
+  }
+]

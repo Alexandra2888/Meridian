@@ -1,0 +1,52 @@
+[
+  {
+    "learner_id": "stub-001",
+    "name": "Amara Okafor",
+    "email": "amara.okafor@example.com",
+    "enrolment_status": "prospect",
+    "program": null,
+    "interests": ["data", "business"],
+    "career_goals": ["data analyst", "business analyst"],
+    "country": "NG"
+  },
+  {
+    "learner_id": "stub-002",
+    "name": "Diego Ramirez",
+    "email": "diego.ramirez@example.com",
+    "enrolment_status": "applied",
+    "program": "BBA in Digital Marketing",
+    "interests": ["marketing", "creative"],
+    "career_goals": ["growth marketer"],
+    "country": "MX"
+  },
+  {
+    "learner_id": "stub-003",
+    "name": "Priya Subramanian",
+    "email": "priya.s@example.com",
+    "enrolment_status": "enrolled",
+    "program": "MBA in AI for Business",
+    "interests": ["ai", "strategy", "leadership"],
+    "career_goals": ["AI product manager"],
+    "country": "IN"
+  },
+  {
+    "learner_id": "stub-004",
+    "name": "Hassan Al-Mansouri",
+    "email": "hassan.am@example.com",
+    "enrolment_status": "enrolled",
+    "program": "BBA in FinTech",
+    "interests": ["finance", "technology"],
+    "career_goals": ["fintech product analyst"],
+    "country": "AE"
+  },
+  {
+    "learner_id": "stub-005",
+    "name": "Linnea Berg",
+    "email": "linnea.berg@example.com",
+    "enrolment_status": "graduated",
+    "program": "MBA in Advanced Management",
+    "interests": ["leadership", "operations"],
+    "career_goals": ["general manager"],
+    "country": "SE"
+  }
+]
