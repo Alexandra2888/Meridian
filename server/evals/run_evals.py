@@ -73,9 +73,11 @@ Output strict JSON only — no commentary outside the structured schema."""
 
 
 async def judge_response(query: str, rubric: str, response: str) -> JudgeVerdict:
-    """One LLM call per test case. Cheap model, temp=0 for stability."""
+    """One LLM call per test case. Uses the dedicated `judge` role (temp=0,
+    `MODEL_JUDGE` env var) so two consecutive eval runs produce comparable
+    scores — drift in the judge would otherwise mask drift in the system."""
 
-    judge = get_llm("agent").with_structured_output(JudgeVerdict, method="json_schema")
+    judge = get_llm("judge").with_structured_output(JudgeVerdict, method="json_schema")
     return await judge.ainvoke(
         [
             SystemMessage(content=_JUDGE_SYSTEM),

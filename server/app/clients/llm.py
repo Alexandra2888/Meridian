@@ -1,8 +1,9 @@
 """LLM factory — single config seam for model selection. RFC §4.5.
 
-Every node asks for a role (`planner`, `agent`, `synthesizer`); the factory
-returns a configured ChatOpenAI. Switching models or providers happens here,
-not in the orchestrator.
+Every node asks for a role (`planner`, `agent`, `synthesizer`, `judge`); the
+factory returns a configured ChatOpenAI. Switching models or providers happens
+here, not in the orchestrator. `judge` is used only by the eval harness — kept
+at temp=0 so scoring is reproducible between runs.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
 
-Role = Literal["planner", "agent", "synthesizer"]
+Role = Literal["planner", "agent", "synthesizer", "judge"]
 
 
 # OpenAI pricing in USD per 1M tokens (input, output) as of 2025-2026.
@@ -30,20 +31,26 @@ _PRICING: dict[str, tuple[float, float]] = {
 
 def _temperature_for(role: Role) -> float:
     # Planner needs to be deterministic — routing accuracy is the eval metric.
-    # Synthesizer benefits from a touch of variety.
-    return {"planner": 0.0, "agent": 0.2, "synthesizer": 0.4}[role]
+    # Synthesizer benefits from a touch of variety. Judge is deterministic so
+    # successive eval runs are comparable.
+    return {"planner": 0.0, "agent": 0.2, "synthesizer": 0.4, "judge": 0.0}[role]
+
+
+def _model_for_role(role: Role) -> str:
+    settings = get_settings()
+    return {
+        "planner": settings.model_planner,
+        "agent": settings.model_agent,
+        "synthesizer": settings.model_synthesizer,
+        "judge": settings.model_judge,
+    }[role]
 
 
 @lru_cache
 def get_llm(role: Role, streaming: bool = False) -> ChatOpenAI:
     settings = get_settings()
-    model = {
-        "planner": settings.model_planner,
-        "agent": settings.model_agent,
-        "synthesizer": settings.model_synthesizer,
-    }[role]
     return ChatOpenAI(
-        model=model,
+        model=_model_for_role(role),
         api_key=settings.openai_api_key,
         temperature=_temperature_for(role),
         streaming=streaming,
@@ -53,12 +60,7 @@ def get_llm(role: Role, streaming: bool = False) -> ChatOpenAI:
 
 
 def model_for(role: Role) -> str:
-    settings = get_settings()
-    return {
-        "planner": settings.model_planner,
-        "agent": settings.model_agent,
-        "synthesizer": settings.model_synthesizer,
-    }[role]
+    return _model_for_role(role)
 
 
 def estimate_cost_usd(model: str, tokens_in: int, tokens_out: int) -> float:

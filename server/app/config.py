@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     model_planner: str = "gpt-4o-mini"
     model_agent: str = "gpt-4o-mini"
     model_synthesizer: str = "gpt-4o"
+    # Dedicated model for the eval LLM-as-judge. Kept separate from `model_agent`
+    # so a reviewer can swap the judge (e.g. to a stronger / different-family
+    # model for less-biased grading) without disturbing the orchestrator.
+    model_judge: str = "gpt-4o-mini"
 
     # CRM
     crm_provider: Literal["stub", "hubspot"] = "stub"
