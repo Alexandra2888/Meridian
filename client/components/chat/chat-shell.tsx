@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
@@ -9,11 +10,15 @@ import {
 } from "@/components/chat/message-list";
 import { iterSseEvents } from "@/lib/stream";
 import { useTraceStore } from "@/lib/trace-store";
-import type { ChatTurnHistory, OrchestratorNode } from "@/lib/types";
+import type { ChatMessageHistory, OrchestratorNode } from "@/lib/types";
 
 interface ChatShellProps {
   /** HubSpot contact ID resolved by the page from `?learner=…`. */
   learnerId: string;
+  /** Conversation id seeded from `?conversation=…`. Null = brand-new thread. */
+  initialConversationId?: string | null;
+  /** Replayed messages for an existing conversation (no streaming flags). */
+  initialMessages?: ChatMessageView[];
   /** Optional CRM card or other header content rendered above the message list. */
   header?: React.ReactNode;
   /** Empty-state slot when no messages have been sent yet. */
@@ -26,37 +31,46 @@ function mapStatus(status: "started" | "finished") {
 }
 
 /**
- * Holds chat state + drives the SSE round-trip. For each user turn:
+ * Holds chat state + drives the SSE round-trip. For each user message:
  *   1. POST to `/api/chat` with the running history + conversation id.
  *   2. Iterate the SSE stream — `status` events update the trace store,
  *      `delta` events append to the assistant bubble, `final` finalizes the
- *      turn and persists the conversation id for the next turn.
+ *      message and persists the conversation id for the next message.
  *
  * Trace state lives in `useTraceStore` (RFC §4.7) so the agent-trace panel
- * can subscribe by `turnId` without re-rendering the whole shell on each
+ * can subscribe by `messageId` without re-rendering the whole shell on each
  * delta.
  */
-export function ChatShell({ learnerId, header, emptyState }: ChatShellProps) {
-  const [messages, setMessages] = useState<ChatMessageView[]>([]);
+export function ChatShell({
+  learnerId,
+  initialConversationId = null,
+  initialMessages,
+  header,
+  emptyState,
+}: ChatShellProps) {
+  const router = useRouter();
+  const [messages, setMessages] = useState<ChatMessageView[]>(
+    initialMessages ?? [],
+  );
   const [pending, setPending] = useState(false);
-  const conversationIdRef = useRef<string | null>(null);
+  const conversationIdRef = useRef<string | null>(initialConversationId);
 
-  const startTurn = useTraceStore((s) => s.startTurn);
+  const startMessage = useTraceStore((s) => s.startMessage);
   const updateStep = useTraceStore((s) => s.updateStep);
   const setFinal = useTraceStore((s) => s.setFinal);
 
-  const appendDelta = useCallback((messageId: string, content: string) => {
+  const appendDelta = useCallback((messageKey: string, content: string) => {
     setMessages((prev) =>
       prev.map((m) =>
-        m.id === messageId ? { ...m, content: m.content + content } : m,
+        m.id === messageKey ? { ...m, content: m.content + content } : m,
       ),
     );
   }, []);
 
-  const finalizeMessage = useCallback((messageId: string) => {
+  const finalizeMessage = useCallback((messageKey: string) => {
     setMessages((prev) =>
       prev.map((m) =>
-        m.id === messageId ? { ...m, isStreaming: false } : m,
+        m.id === messageKey ? { ...m, isStreaming: false } : m,
       ),
     );
   }, []);
@@ -64,14 +78,14 @@ export function ChatShell({ learnerId, header, emptyState }: ChatShellProps) {
   const handleSubmit = useCallback(
     async (text: string) => {
       const userId = crypto.randomUUID();
-      // The assistant's `id` doubles as the local turn key — the trace store
-      // is keyed by it until the server's authoritative `turn_id` arrives in
-      // the `final` event.
+      // The assistant's `id` doubles as the local message key — the trace
+      // store is keyed by it until the server's authoritative `message_id`
+      // arrives in the `final` event.
       const assistantId = crypto.randomUUID();
 
-      // Snapshot history BEFORE we append the new user turn so the server
+      // Snapshot history BEFORE we append the new user message so the server
       // doesn't see its own incoming message in `history`.
-      const history: ChatTurnHistory[] = messages
+      const history: ChatMessageHistory[] = messages
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({ role: m.role, content: m.content }));
 
@@ -82,12 +96,14 @@ export function ChatShell({ learnerId, header, emptyState }: ChatShellProps) {
           id: assistantId,
           role: "assistant",
           content: "",
-          turnId: assistantId,
+          messageId: assistantId,
           isStreaming: true,
         },
       ]);
       setPending(true);
-      startTurn(assistantId);
+      startMessage(assistantId);
+
+      const wasNewConversation = conversationIdRef.current === null;
 
       try {
         const res = await fetch("/api/chat", {
@@ -126,7 +142,7 @@ export function ChatShell({ learnerId, header, emptyState }: ChatShellProps) {
             case "final":
               conversationIdRef.current = event.data.conversation_id;
               setFinal(assistantId, {
-                turnId: event.data.turn_id,
+                messageId: event.data.message_id,
                 conversationId: event.data.conversation_id,
                 agentsInvoked: event.data.agents_invoked,
                 totalLatencyMs: event.data.total_latency_ms,
@@ -149,12 +165,23 @@ export function ChatShell({ learnerId, header, emptyState }: ChatShellProps) {
       } finally {
         finalizeMessage(assistantId);
         setPending(false);
+
+        // Refresh the sidebar — once now (to surface the new row / bump
+        // recency), and once again ~2.5s later to catch the AI-generated
+        // title that the server writes in the background after persist.
+        if (wasNewConversation) {
+          router.refresh();
+          window.setTimeout(() => router.refresh(), 2500);
+        } else {
+          router.refresh();
+        }
       }
     },
     [
       learnerId,
       messages,
-      startTurn,
+      router,
+      startMessage,
       updateStep,
       setFinal,
       appendDelta,

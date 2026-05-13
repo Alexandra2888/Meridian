@@ -33,7 +33,7 @@ class FinalEvent(BaseModel):
     tokens_in: int
     tokens_out: int
     conversation_id: str
-    turn_id: str
+    message_id: str
     learner: dict | None = Field(
         default=None, description="Snapshot of LearnerProfile shown to the FE context card"
     )

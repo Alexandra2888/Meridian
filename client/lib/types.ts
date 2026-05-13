@@ -49,17 +49,40 @@ export interface TraceStep {
   durationMs?: number;
 }
 
-export interface ChatTurnHistory {
+export interface ChatMessageHistory {
   role: "user" | "assistant";
   content: string;
 }
 
-export interface TurnFinalMetadata {
-  turnId: string;
+export interface MessageFinalMetadata {
+  messageId: string;
   conversationId: string;
   agentsInvoked: AgentName[];
   totalLatencyMs: number;
   costUsd: number;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+export interface ConversationDetail {
+  id: string;
+  learner_id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  messages: ConversationMessage[];
 }
 
 /** SSE event protocol — RFC §4.7. */
@@ -83,7 +106,7 @@ export type SseEvent =
         tokens_in?: number;
         tokens_out?: number;
         conversation_id: string;
-        turn_id: string;
+        message_id: string;
         learner?: LearnerProfile | null;
       };
     }

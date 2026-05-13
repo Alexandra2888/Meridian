@@ -33,17 +33,21 @@ class ConversationRow(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     learner_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
-    turns: Mapped[list[TurnRow]] = relationship(
+    messages: Mapped[list[MessageRow]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
-        order_by="TurnRow.created_at",
+        order_by="MessageRow.created_at",
     )
 
 
-class TurnRow(Base):
-    __tablename__ = "turns"
+class MessageRow(Base):
+    __tablename__ = "messages"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     conversation_id: Mapped[str] = mapped_column(
@@ -59,7 +63,7 @@ class TurnRow(Base):
     trace_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    conversation: Mapped[ConversationRow] = relationship(back_populates="turns")
+    conversation: Mapped[ConversationRow] = relationship(back_populates="messages")
 
 
 class EvalRunRow(Base):

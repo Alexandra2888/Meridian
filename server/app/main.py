@@ -10,16 +10,25 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.api.sse import chat_event_stream
 from app.clients.crm import get_crm_client
 from app.config import get_settings
+from app.db import ConversationRepo, session_scope
 from app.db.session import dispose_db, init_db
 from app.observability import configure_logging, get_logger
-from app.schemas import ChatRequest, LearnerProfile, LearnerSummary
+from app.schemas import (
+    ChatRequest,
+    ConversationDetail,
+    ConversationSummary,
+    ConversationTitleUpdate,
+    LearnerProfile,
+    LearnerSummary,
+    MessageView,
+)
 
 configure_logging()
 log = get_logger(__name__)
@@ -85,6 +94,59 @@ async def get_learner(learner_id: str) -> LearnerProfile:
         # so the context card can show a "couldn't load profile" affordance.
         raise HTTPException(status_code=503, detail="CRM lookup degraded")
     return profile
+
+
+@app.get("/conversations", response_model=list[ConversationSummary])
+async def list_conversations(
+    learner_id: str, limit: int = 50
+) -> list[ConversationSummary]:
+    """Sidebar list — most-recently-updated first, per learner."""
+
+    async with session_scope() as session:
+        repo = ConversationRepo(session)
+        rows = await repo.list_by_learner(learner_id, limit=limit)
+        return [ConversationSummary.model_validate(r) for r in rows]
+
+
+@app.get("/conversations/{conversation_id}", response_model=ConversationDetail)
+async def get_conversation(conversation_id: str) -> ConversationDetail:
+    """Full conversation with ordered messages, for replaying into the chat view."""
+
+    async with session_scope() as session:
+        repo = ConversationRepo(session)
+        row = await repo.get_with_messages(conversation_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return ConversationDetail(
+            id=row.id,
+            learner_id=row.learner_id,
+            title=row.title,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            messages=[MessageView.model_validate(m) for m in row.messages],
+        )
+
+
+@app.patch("/conversations/{conversation_id}", response_model=ConversationSummary)
+async def update_conversation(
+    conversation_id: str, body: ConversationTitleUpdate
+) -> ConversationSummary:
+    async with session_scope() as session:
+        repo = ConversationRepo(session)
+        row = await repo.update_title(conversation_id, body.title.strip())
+        if row is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return ConversationSummary.model_validate(row)
+
+
+@app.delete("/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(conversation_id: str) -> Response:
+    async with session_scope() as session:
+        repo = ConversationRepo(session)
+        ok = await repo.delete(conversation_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="conversation not found")
+    return Response(status_code=204)
 
 
 @app.post("/chat")

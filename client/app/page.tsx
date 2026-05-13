@@ -1,10 +1,22 @@
 import { Sparkles } from "lucide-react";
 
 import { ChatShell } from "@/components/chat/chat-shell";
+import type { ChatMessageView } from "@/components/chat/message-list";
+import { ConversationSidebar } from "@/components/conversations/conversation-sidebar";
 import { LearnerContextCard } from "@/components/learner/learner-context-card";
 import { LearnerSelector } from "@/components/learner/learner-selector";
-import { fetchLearnerProfile, fetchLearnerSummaries } from "@/lib/api";
-import type { LearnerProfile, LearnerSummary } from "@/lib/types";
+import {
+  fetchConversation,
+  fetchConversations,
+  fetchLearnerProfile,
+  fetchLearnerSummaries,
+} from "@/lib/api";
+import type {
+  ConversationDetail,
+  ConversationSummary,
+  LearnerProfile,
+  LearnerSummary,
+} from "@/lib/types";
 
 const CANONICAL_PROMPTS = [
   "What program is right for me, and what jobs does it lead to once I graduate?",
@@ -18,9 +30,10 @@ const DEFAULT_LEARNER_ID =
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ learner?: string }>;
+  searchParams: Promise<{ learner?: string; conversation?: string }>;
 }) {
-  const { learner: learnerParam } = await searchParams;
+  const { learner: learnerParam, conversation: conversationParam } =
+    await searchParams;
 
   // Pull the picker list first — if `?learner=` isn't set we default to the
   // first learner returned (typically the first HubSpot contact or the first
@@ -35,37 +48,86 @@ export default async function Page({
   const learnerId =
     learnerParam?.trim() || learners[0]?.learner_id || DEFAULT_LEARNER_ID;
 
-  let profile: LearnerProfile | null = null;
-  let loadError: string | null = null;
-  try {
-    profile = await fetchLearnerProfile(learnerId, { cache: "no-store" });
-  } catch (err) {
-    loadError = err instanceof Error ? err.message : "Failed to load profile";
+  // Profile + conversation list are independent — fetch in parallel.
+  const [profileResult, conversationsResult] = await Promise.allSettled([
+    fetchLearnerProfile(learnerId, { cache: "no-store" }),
+    fetchConversations(learnerId, { cache: "no-store" }),
+  ]);
+
+  const profile: LearnerProfile | null =
+    profileResult.status === "fulfilled" ? profileResult.value : null;
+  const loadError: string | null =
+    profileResult.status === "rejected"
+      ? profileResult.reason instanceof Error
+        ? profileResult.reason.message
+        : "Failed to load profile"
+      : null;
+  const conversations: ConversationSummary[] =
+    conversationsResult.status === "fulfilled" ? conversationsResult.value : [];
+
+  // If a conversation is selected via `?conversation=`, hydrate its messages
+  // so the chat shell renders the full thread on mount.
+  let activeConversation: ConversationDetail | null = null;
+  if (conversationParam) {
+    try {
+      activeConversation = await fetchConversation(conversationParam, {
+        cache: "no-store",
+      });
+      // Guard against a learner switch that leaves a stale conversation id
+      // in the URL — fall back to a fresh thread for the new learner.
+      if (activeConversation.learner_id !== learnerId) {
+        activeConversation = null;
+      }
+    } catch {
+      activeConversation = null;
+    }
   }
 
+  const initialMessages: ChatMessageView[] | undefined = activeConversation
+    ? activeConversation.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        messageId: m.role === "assistant" ? m.id : undefined,
+        isStreaming: false,
+      }))
+    : undefined;
+
+  const activeConversationId = activeConversation?.id ?? null;
+
   return (
-    <main className="flex flex-1 flex-col min-h-0">
-      <Header
-        selector={
-          learners.length > 0 ? (
-            <LearnerSelector
-              learners={learners}
-              currentLearnerId={learnerId}
-            />
-          ) : null
-        }
-      />
-      <ChatShell
+    <main className="flex flex-1 min-h-0">
+      <ConversationSidebar
         learnerId={learnerId}
-        header={
-          <LearnerContextCard
-            learner={profile}
-            loading={false}
-            errorMessage={loadError ?? undefined}
-          />
-        }
-        emptyState={<EmptyState />}
+        conversations={conversations}
+        activeConversationId={activeConversationId}
       />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header
+          selector={
+            learners.length > 0 ? (
+              <LearnerSelector
+                learners={learners}
+                currentLearnerId={learnerId}
+              />
+            ) : null
+          }
+        />
+        <ChatShell
+          key={activeConversationId ?? "new"}
+          learnerId={learnerId}
+          initialConversationId={activeConversationId}
+          initialMessages={initialMessages}
+          header={
+            <LearnerContextCard
+              learner={profile}
+              loading={false}
+              errorMessage={loadError ?? undefined}
+            />
+          }
+          emptyState={<EmptyState />}
+        />
+      </div>
     </main>
   );
 }

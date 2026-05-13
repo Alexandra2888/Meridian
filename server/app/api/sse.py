@@ -41,13 +41,13 @@ async def chat_event_stream(req: ChatRequest) -> AsyncIterator[str]:
     graph = get_graph()
     trace_id = new_trace_id()
     conversation_id = req.conversation_id or str(uuid.uuid4())
-    turn_id = str(uuid.uuid4())
+    message_id = str(uuid.uuid4())
     t_start = time.monotonic()
 
     initial_state: dict[str, Any] = {
         "learner_id": req.learner_id,
         "conversation_id": conversation_id,
-        "turn_id": turn_id,
+        "message_id": message_id,
         "trace_id": trace_id,
         "t_start": t_start,
         "user_message": req.message,
@@ -109,7 +109,7 @@ async def chat_event_stream(req: ChatRequest) -> AsyncIterator[str]:
             tokens_in=int(final_state.get("tokens_in", 0)),
             tokens_out=int(final_state.get("tokens_out", 0)),
             conversation_id=conversation_id,
-            turn_id=turn_id,
+            message_id=message_id,
             learner=final_state.get("learner"),
         )
         yield _sse_frame("final", final_payload.model_dump())

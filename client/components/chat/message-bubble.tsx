@@ -9,7 +9,7 @@ export type MessageRole = "user" | "assistant";
 interface MessageBubbleProps {
   role: MessageRole;
   content: string;
-  turnId?: string;
+  messageId?: string;
   isStreaming?: boolean;
 }
 
@@ -20,7 +20,7 @@ interface MessageBubbleProps {
 export function MessageBubble({
   role,
   content,
-  turnId,
+  messageId,
   isStreaming,
 }: MessageBubbleProps) {
   if (role === "user") {
@@ -36,7 +36,7 @@ export function MessageBubble({
   return (
     <AssistantBubble
       content={content}
-      turnId={turnId}
+      messageId={messageId}
       isStreaming={isStreaming}
     />
   );
@@ -44,15 +44,15 @@ export function MessageBubble({
 
 function AssistantBubble({
   content,
-  turnId,
+  messageId,
   isStreaming,
 }: {
   content: string;
-  turnId?: string;
+  messageId?: string;
   isStreaming?: boolean;
 }) {
   const final = useTraceStore((s) =>
-    turnId ? s.turns[turnId]?.final : undefined,
+    messageId ? s.messages[messageId]?.final : undefined,
   );
 
   return (
@@ -71,12 +71,12 @@ function AssistantBubble({
           </p>
         )}
       </div>
-      {turnId ? (
+      {messageId ? (
         <div className="flex flex-wrap items-center gap-2 pl-1">
           <CostBadge final={final} />
         </div>
       ) : null}
-      {turnId ? <AgentTrace turnId={turnId} /> : null}
+      {messageId ? <AgentTrace messageId={messageId} /> : null}
     </div>
   );
 }

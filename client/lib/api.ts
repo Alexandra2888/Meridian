@@ -1,4 +1,9 @@
-import type { LearnerProfile, LearnerSummary } from "@/lib/types";
+import type {
+  ConversationDetail,
+  ConversationSummary,
+  LearnerProfile,
+  LearnerSummary,
+} from "@/lib/types";
 
 /**
  * Server-side base URL for the FastAPI orchestrator. Read via `API_URL` env;
@@ -37,4 +42,40 @@ export async function fetchLearnerSummaries(
     throw new Error(`Failed to load learners: ${res.status}`);
   }
   return (await res.json()) as LearnerSummary[];
+}
+
+/** Sidebar list — conversations belonging to `learnerId`, recency-ordered. */
+export async function fetchConversations(
+  learnerId: string,
+  init?: RequestInit,
+): Promise<ConversationSummary[]> {
+  const res = await fetch(
+    apiUrl(`/conversations?learner_id=${encodeURIComponent(learnerId)}`),
+    {
+      ...init,
+      headers: { Accept: "application/json", ...init?.headers },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load conversations: ${res.status}`);
+  }
+  return (await res.json()) as ConversationSummary[];
+}
+
+/** Full conversation with ordered messages, used to seed the chat shell. */
+export async function fetchConversation(
+  conversationId: string,
+  init?: RequestInit,
+): Promise<ConversationDetail> {
+  const res = await fetch(
+    apiUrl(`/conversations/${encodeURIComponent(conversationId)}`),
+    {
+      ...init,
+      headers: { Accept: "application/json", ...init?.headers },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load conversation ${conversationId}: ${res.status}`);
+  }
+  return (await res.json()) as ConversationDetail;
 }

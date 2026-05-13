@@ -1,4 +1,4 @@
-from app.db.models import Base, ConversationRow, EvalRunRow, TurnRow
+from app.db.models import Base, ConversationRow, EvalRunRow, MessageRow
 from app.db.repository import ConversationRepo, EvalRepo
 from app.db.session import (
     create_engine_and_sessionmaker,
@@ -14,7 +14,7 @@ __all__ = [
     "ConversationRow",
     "EvalRepo",
     "EvalRunRow",
-    "TurnRow",
+    "MessageRow",
     "create_engine_and_sessionmaker",
     "get_engine",
     "get_sessionmaker",

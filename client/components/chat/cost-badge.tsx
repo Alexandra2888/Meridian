@@ -2,10 +2,10 @@ import { Clock, Coins } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { TurnFinalMetadata } from "@/lib/types";
+import type { MessageFinalMetadata } from "@/lib/types";
 
 interface CostBadgeProps {
-  final: TurnFinalMetadata | undefined;
+  final: MessageFinalMetadata | undefined;
   className?: string;
 }
 

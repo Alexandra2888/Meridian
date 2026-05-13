@@ -6,7 +6,7 @@ AgentName = Literal["discovery", "career"]
 Route = Literal["discovery", "career", "both", "neither"]
 
 
-class ChatTurn(BaseModel):
+class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
 
@@ -18,7 +18,7 @@ class ChatRequest(BaseModel):
         default=None,
         description="Server creates one when null. Pass the prior id to continue a thread.",
     )
-    history: list[ChatTurn] = Field(default_factory=list)
+    history: list[ChatMessage] = Field(default_factory=list)
 
 
 class PlanOutput(BaseModel):

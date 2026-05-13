@@ -41,6 +41,6 @@ def test_final_event_serializes_event_field():
         tokens_in=10,
         tokens_out=20,
         conversation_id="c",
-        turn_id="t",
+        message_id="t",
     )
     assert f.model_dump()["event"] == "final"

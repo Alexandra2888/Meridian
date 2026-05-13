@@ -24,19 +24,19 @@ const RENDER_ORDER: OrchestratorNode[] = [
 ];
 
 interface AgentTraceProps {
-  turnId: string;
+  messageId: string;
   defaultOpen?: boolean;
 }
 
 /**
- * The orchestration cockpit panel for a single assistant turn — RFC §5.2.
+ * The orchestration cockpit panel for a single assistant message — RFC §5.2.
  * Reads from the Zustand trace store; each row animates pending → running →
  * done as `status` events arrive. The Discovery and Career rows render in
  * parallel because the underlying orchestrator runs them in parallel.
  */
-export function AgentTrace({ turnId, defaultOpen = true }: AgentTraceProps) {
+export function AgentTrace({ messageId, defaultOpen = true }: AgentTraceProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const trace = useTraceStore((s) => s.turns[turnId]);
+  const trace = useTraceStore((s) => s.messages[messageId]);
 
   if (!trace) return null;
 

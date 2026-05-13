@@ -52,7 +52,7 @@ const finalDataSchema = z
     tokens_in: z.number().optional(),
     tokens_out: z.number().optional(),
     conversation_id: z.string(),
-    turn_id: z.string(),
+    message_id: z.string(),
     learner: z.unknown().nullable().optional(),
   })
   .passthrough();

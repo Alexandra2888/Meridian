@@ -10,7 +10,7 @@ export interface ChatMessageView {
   id: string;
   role: MessageRole;
   content: string;
-  turnId?: string;
+  messageId?: string;
   isStreaming?: boolean;
 }
 
@@ -42,7 +42,7 @@ export function MessageList({ messages, emptyState }: MessageListProps) {
             key={m.id}
             role={m.role}
             content={m.content}
-            turnId={m.turnId}
+            messageId={m.messageId}
             isStreaming={m.isStreaming}
           />
         ))}

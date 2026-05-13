@@ -6,10 +6,12 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.db.models import ConversationRow, EvalRunRow, TurnRow
+from app.db.models import ConversationRow, EvalRunRow, MessageRow
 
 
 class ConversationRepo:
@@ -30,7 +32,62 @@ class ConversationRepo:
         await self.session.flush()
         return row
 
-    async def add_turn(
+    async def get(self, conversation_id: str) -> ConversationRow | None:
+        return await self.session.get(ConversationRow, conversation_id)
+
+    async def get_with_messages(self, conversation_id: str) -> ConversationRow | None:
+        stmt = (
+            select(ConversationRow)
+            .where(ConversationRow.id == conversation_id)
+            .options(selectinload(ConversationRow.messages))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_by_learner(
+        self, learner_id: str, limit: int = 50
+    ) -> list[ConversationRow]:
+        stmt = (
+            select(ConversationRow)
+            .where(ConversationRow.learner_id == learner_id)
+            .order_by(ConversationRow.updated_at.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def update_title(
+        self, conversation_id: str, title: str
+    ) -> ConversationRow | None:
+        row = await self.session.get(ConversationRow, conversation_id)
+        if row is None:
+            return None
+        row.title = title
+        await self.session.flush()
+        return row
+
+    async def touch(self, conversation_id: str) -> None:
+        """Bump `updated_at` so the conversation rises to the top of the sidebar.
+
+        SQLAlchemy's `onupdate` only fires when other columns change; this keeps
+        recency ordering correct after a new message is added.
+        """
+
+        from datetime import UTC, datetime
+
+        stmt = (
+            update(ConversationRow)
+            .where(ConversationRow.id == conversation_id)
+            .values(updated_at=datetime.now(UTC))
+        )
+        await self.session.execute(stmt)
+
+    async def delete(self, conversation_id: str) -> bool:
+        stmt = sa_delete(ConversationRow).where(ConversationRow.id == conversation_id)
+        result = await self.session.execute(stmt)
+        return (result.rowcount or 0) > 0
+
+    async def add_message(
         self,
         conversation_id: str,
         role: str,
@@ -42,8 +99,8 @@ class ConversationRepo:
         tokens_out: int | None = None,
         cost_usd: float | None = None,
         trace_id: str | None = None,
-    ) -> TurnRow:
-        row = TurnRow(
+    ) -> MessageRow:
+        row = MessageRow(
             conversation_id=conversation_id,
             role=role,
             content=content,
@@ -58,11 +115,11 @@ class ConversationRepo:
         await self.session.flush()
         return row
 
-    async def list_turns(self, conversation_id: str) -> list[TurnRow]:
+    async def list_messages(self, conversation_id: str) -> list[MessageRow]:
         stmt = (
-            select(TurnRow)
-            .where(TurnRow.conversation_id == conversation_id)
-            .order_by(TurnRow.created_at)
+            select(MessageRow)
+            .where(MessageRow.conversation_id == conversation_id)
+            .order_by(MessageRow.created_at)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

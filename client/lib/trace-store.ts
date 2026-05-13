@@ -3,47 +3,47 @@
 import { create } from "zustand";
 
 import type {
+  MessageFinalMetadata,
   OrchestratorNode,
   TraceStep,
   TraceStepStatus,
-  TurnFinalMetadata,
 } from "@/lib/types";
 
 /**
- * Per-turn trace state, keyed by turn_id. The chat message list and the
+ * Per-message trace state, keyed by message_id. The chat message list and the
  * trace panel both read from here; SSE event handlers in `lib/stream.ts`
  * write to here. RFC §4.7.
  */
-export interface TurnTrace {
+export interface MessageTrace {
   steps: Partial<Record<OrchestratorNode, TraceStep>>;
-  final?: TurnFinalMetadata;
+  final?: MessageFinalMetadata;
 }
 
 interface TraceStore {
-  turns: Record<string, TurnTrace>;
+  messages: Record<string, MessageTrace>;
 
-  startTurn: (turnId: string) => void;
+  startMessage: (messageId: string) => void;
   updateStep: (
-    turnId: string,
+    messageId: string,
     node: OrchestratorNode,
     status: TraceStepStatus,
     durationMs?: number,
   ) => void;
-  setFinal: (turnId: string, final: TurnFinalMetadata) => void;
+  setFinal: (messageId: string, final: MessageFinalMetadata) => void;
   reset: () => void;
 }
 
 export const useTraceStore = create<TraceStore>((set) => ({
-  turns: {},
+  messages: {},
 
-  startTurn: (turnId) =>
+  startMessage: (messageId) =>
     set((state) => ({
-      turns: { ...state.turns, [turnId]: { steps: {} } },
+      messages: { ...state.messages, [messageId]: { steps: {} } },
     })),
 
-  updateStep: (turnId, node, status, durationMs) =>
+  updateStep: (messageId, node, status, durationMs) =>
     set((state) => {
-      const existing = state.turns[turnId] ?? { steps: {} };
+      const existing = state.messages[messageId] ?? { steps: {} };
       const prior = existing.steps[node];
       const now = Date.now();
       const next: TraceStep = {
@@ -59,9 +59,9 @@ export const useTraceStore = create<TraceStore>((set) => ({
             : prior?.durationMs),
       };
       return {
-        turns: {
-          ...state.turns,
-          [turnId]: {
+        messages: {
+          ...state.messages,
+          [messageId]: {
             ...existing,
             steps: { ...existing.steps, [node]: next },
           },
@@ -69,13 +69,13 @@ export const useTraceStore = create<TraceStore>((set) => ({
       };
     }),
 
-  setFinal: (turnId, final) =>
+  setFinal: (messageId, final) =>
     set((state) => {
-      const existing = state.turns[turnId] ?? { steps: {} };
+      const existing = state.messages[messageId] ?? { steps: {} };
       return {
-        turns: { ...state.turns, [turnId]: { ...existing, final } },
+        messages: { ...state.messages, [messageId]: { ...existing, final } },
       };
     }),
 
-  reset: () => set({ turns: {} }),
+  reset: () => set({ messages: {} }),
 }));
