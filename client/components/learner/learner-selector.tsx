@@ -45,7 +45,7 @@ export function LearnerSelector({
       )}
     >
       <Users size={14} strokeWidth={1.75} className="text-text-subtle" />
-      <span className="font-mono text-micro uppercase tracking-wider text-text-subtle">
+      <span className="hidden font-mono text-micro uppercase tracking-wider text-text-subtle sm:inline">
         learner
       </span>
       <select
@@ -55,7 +55,7 @@ export function LearnerSelector({
         className={cn(
           "appearance-none bg-transparent outline-none",
           "text-small text-foreground cursor-pointer",
-          "max-w-[180px] truncate",
+          "max-w-[120px] truncate sm:max-w-[180px]",
         )}
       >
         {/* If currentLearnerId isn't in the list (e.g. arbitrary ?learner= param),

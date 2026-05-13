@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { ChatShell } from "@/components/chat/chat-shell";
 import type { ChatMessageView } from "@/components/chat/message-list";
 import { ConversationSidebar } from "@/components/conversations/conversation-sidebar";
+import { MobileSidebarToggle } from "@/components/conversations/mobile-sidebar-toggle";
 import { LearnerContextCard } from "@/components/learner/learner-context-card";
 import { LearnerSelector } from "@/components/learner/learner-selector";
 import {
@@ -135,16 +136,17 @@ export default async function Page({
 function Header({ selector }: { selector?: React.ReactNode }) {
   return (
     <header className="border-b border-border-subtle bg-surface-sunken">
-      <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-3 md:px-6">
+      <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3 md:px-6">
+        <MobileSidebarToggle />
         <div
           aria-hidden
-          className="flex size-7 items-center justify-center rounded-md bg-accent-orchestration text-primary-foreground"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent-orchestration text-primary-foreground"
         >
           <span className="font-mono text-small font-semibold">M</span>
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">Meridian</p>
-          <p className="truncate text-micro text-text-subtle font-mono uppercase tracking-wider">
+          <p className="hidden truncate text-micro text-text-subtle font-mono uppercase tracking-wider sm:block">
             learner orchestration · v1
           </p>
         </div>

@@ -12,6 +12,9 @@ interface ConversationItemProps {
   conversation: ConversationSummary;
   learnerId: string;
   isActive: boolean;
+  /** Called whenever this row triggers a route push — lets the parent close
+   * the mobile drawer so the user lands on the conversation, not the menu. */
+  onNavigate?: () => void;
 }
 
 type Mode = "view" | "editing" | "confirming-delete";
@@ -26,6 +29,7 @@ export function ConversationItem({
   conversation,
   learnerId,
   isActive,
+  onNavigate,
 }: ConversationItemProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -55,6 +59,7 @@ export function ConversationItem({
 
   const navigate = () => {
     if (mode !== "view" || busy) return;
+    onNavigate?.();
     startTransition(() => {
       router.push(
         `/?learner=${encodeURIComponent(learnerId)}&conversation=${encodeURIComponent(
@@ -100,6 +105,7 @@ export function ConversationItem({
       if (isActive) {
         // The active conversation just vanished — drop the query param so
         // the chat resets to a fresh thread.
+        onNavigate?.();
         router.push(`/?learner=${encodeURIComponent(learnerId)}`);
       } else {
         router.refresh();
