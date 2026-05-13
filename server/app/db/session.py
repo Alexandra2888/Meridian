@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -36,6 +37,18 @@ def create_engine_and_sessionmaker() -> tuple[AsyncEngine, async_sessionmaker[As
             Path(file_part).parent.mkdir(parents=True, exist_ok=True)
 
     engine = create_async_engine(url, future=True, pool_pre_ping=True)
+
+    # SQLite doesn't enforce foreign keys by default — without this PRAGMA,
+    # `ON DELETE CASCADE` on `messages.conversation_id` would be a no-op and
+    # deleting a conversation would orphan its messages. No-op for Postgres.
+    if url.startswith("sqlite"):
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _enable_sqlite_foreign_keys(dbapi_conn, _) -> None:
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
     sm = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     return engine, sm
 
