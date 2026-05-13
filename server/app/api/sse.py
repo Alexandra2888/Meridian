@@ -16,6 +16,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.db import ConversationRepo, session_scope
 from app.observability import get_logger, new_trace_id
 from app.orchestrator import get_graph
 from app.orchestrator.graph import NODE_NAMES
@@ -60,6 +61,9 @@ async def chat_event_stream(req: ChatRequest) -> AsyncIterator[str]:
 
     # Per-node timing. on_chain_start sets the start; on_chain_end computes ms.
     node_started_at: dict[str, float] = {}
+    # Collected per-node durations; persisted after the graph completes so the
+    # agent-trace panel survives a reload.
+    step_durations: dict[str, int] = {}
 
     final_state: dict[str, Any] = {}
 
@@ -79,6 +83,7 @@ async def chat_event_stream(req: ChatRequest) -> AsyncIterator[str]:
             elif kind == "on_chain_end" and name in NODE_NAMES:
                 t0 = node_started_at.pop(name, time.monotonic())
                 duration_ms = int((time.monotonic() - t0) * 1000)
+                step_durations[name] = duration_ms
                 yield _sse_frame(
                     "status",
                     StatusEvent(
@@ -100,6 +105,18 @@ async def chat_event_stream(req: ChatRequest) -> AsyncIterator[str]:
             # Re-run is not desirable here; use the seed dict so at least the
             # ids are present. Token counts will be zero in this edge case.
             final_state = initial_state
+
+        # Persist per-node durations onto the assistant message we just wrote.
+        # Best-effort: a DB hiccup here mustn't break the SSE stream.
+        if step_durations:
+            try:
+                async with session_scope() as session:
+                    repo = ConversationRepo(session)
+                    await repo.set_step_durations(
+                        conversation_id, trace_id, step_durations
+                    )
+            except Exception:  # noqa: BLE001
+                log.warning("step_durations_persist_failed", trace_id=trace_id)
 
         total_latency_ms = int((time.monotonic() - t_start) * 1000)
         final_payload = FinalEvent(

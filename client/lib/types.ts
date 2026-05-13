@@ -74,6 +74,13 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  // Assistant-only telemetry — null on user rows.
+  agents_invoked?: AgentName[] | null;
+  latency_ms?: number | null;
+  cost_usd?: number | null;
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  step_durations?: Partial<Record<OrchestratorNode, number>> | null;
 }
 
 export interface ConversationDetail {

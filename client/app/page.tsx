@@ -1,6 +1,6 @@
 import { Sparkles } from "lucide-react";
 
-import { ChatShell } from "@/components/chat/chat-shell";
+import { ChatShell, type InitialTraceSeed } from "@/components/chat/chat-shell";
 import type { ChatMessageView } from "@/components/chat/message-list";
 import { ConversationSidebar } from "@/components/conversations/conversation-sidebar";
 import { MobileSidebarToggle } from "@/components/conversations/mobile-sidebar-toggle";
@@ -94,6 +94,24 @@ export default async function Page({
       }))
     : undefined;
 
+  // Pre-shaped trace data for the assistant messages so the agent-trace panel
+  // + cost/latency badges render on first paint after reload.
+  const initialTrace: InitialTraceSeed[] | undefined = activeConversation
+    ? activeConversation.messages
+        .filter((m) => m.role === "assistant")
+        .map((m) => ({
+          messageId: m.id,
+          stepDurations: m.step_durations ?? {},
+          final: {
+            messageId: m.id,
+            conversationId: activeConversation.id,
+            agentsInvoked: m.agents_invoked ?? [],
+            totalLatencyMs: m.latency_ms ?? 0,
+            costUsd: m.cost_usd ?? 0,
+          },
+        }))
+    : undefined;
+
   const activeConversationId = activeConversation?.id ?? null;
 
   return (
@@ -119,6 +137,7 @@ export default async function Page({
           learnerId={learnerId}
           initialConversationId={activeConversationId}
           initialMessages={initialMessages}
+          initialTrace={initialTrace}
           header={
             <LearnerContextCard
               learner={profile}

@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MessageView(BaseModel):
-    """A single persisted message returned to the FE — mirrors `MessageRow`."""
+    """A single persisted message returned to the FE — mirrors `MessageRow`.
+
+    The telemetry fields (`agents_invoked` … `step_durations`) are populated
+    only on assistant rows; for user rows they're `None`. The frontend seeds
+    its trace store from these so the agent-trace panel + cost/latency badges
+    survive a page reload.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -17,6 +24,19 @@ class MessageView(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+
+    agents_invoked: list[str] | None = None
+    latency_ms: int | None = None
+    cost_usd: float | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    step_durations: dict[str, int] | None = None
+
+    @field_validator("cost_usd", mode="before")
+    @classmethod
+    def _decimal_to_float(cls, v: object) -> object:
+        # SQLAlchemy returns Numeric columns as `Decimal`; cast for JSON serialization.
+        return float(v) if isinstance(v, Decimal) else v
 
 
 class ConversationSummary(BaseModel):

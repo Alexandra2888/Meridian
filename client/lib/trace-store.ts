@@ -30,6 +30,16 @@ interface TraceStore {
     durationMs?: number,
   ) => void;
   setFinal: (messageId: string, final: MessageFinalMetadata) => void;
+  /**
+   * Hydrate a completed message's trace from persisted server data, so the
+   * agent-trace panel + cost/latency badges survive a reload. Steps are
+   * recorded as already-`done` since the run finished before this seed.
+   */
+  seedMessage: (
+    messageId: string,
+    stepDurations: Partial<Record<OrchestratorNode, number>>,
+    final: MessageFinalMetadata,
+  ) => void;
   reset: () => void;
 }
 
@@ -74,6 +84,22 @@ export const useTraceStore = create<TraceStore>((set) => ({
       const existing = state.messages[messageId] ?? { steps: {} };
       return {
         messages: { ...state.messages, [messageId]: { ...existing, final } },
+      };
+    }),
+
+  seedMessage: (messageId, stepDurations, final) =>
+    set((state) => {
+      const steps: Partial<Record<OrchestratorNode, TraceStep>> = {};
+      for (const [node, durationMs] of Object.entries(stepDurations)) {
+        if (typeof durationMs !== "number") continue;
+        steps[node as OrchestratorNode] = {
+          node: node as OrchestratorNode,
+          status: "done",
+          durationMs,
+        };
+      }
+      return {
+        messages: { ...state.messages, [messageId]: { steps, final } },
       };
     }),
 

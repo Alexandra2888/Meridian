@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Composer } from "@/components/chat/composer";
 import {
@@ -10,7 +10,17 @@ import {
 } from "@/components/chat/message-list";
 import { iterSseEvents } from "@/lib/stream";
 import { useTraceStore } from "@/lib/trace-store";
-import type { ChatMessageHistory, OrchestratorNode } from "@/lib/types";
+import type {
+  ChatMessageHistory,
+  MessageFinalMetadata,
+  OrchestratorNode,
+} from "@/lib/types";
+
+export interface InitialTraceSeed {
+  messageId: string;
+  stepDurations: Partial<Record<OrchestratorNode, number>>;
+  final: MessageFinalMetadata;
+}
 
 interface ChatShellProps {
   /** HubSpot contact ID resolved by the page from `?learner=…`. */
@@ -19,6 +29,8 @@ interface ChatShellProps {
   initialConversationId?: string | null;
   /** Replayed messages for an existing conversation (no streaming flags). */
   initialMessages?: ChatMessageView[];
+  /** Persisted trace data per assistant message — hydrates the trace store on mount. */
+  initialTrace?: InitialTraceSeed[];
   /** Optional CRM card or other header content rendered above the message list. */
   header?: React.ReactNode;
   /** Empty-state slot when no messages have been sent yet. */
@@ -45,6 +57,7 @@ export function ChatShell({
   learnerId,
   initialConversationId = null,
   initialMessages,
+  initialTrace,
   header,
   emptyState,
 }: ChatShellProps) {
@@ -58,6 +71,18 @@ export function ChatShell({
   const startMessage = useTraceStore((s) => s.startMessage);
   const updateStep = useTraceStore((s) => s.updateStep);
   const setFinal = useTraceStore((s) => s.setFinal);
+  const seedMessage = useTraceStore((s) => s.seedMessage);
+
+  // Hydrate the trace store on mount with persisted per-message telemetry so
+  // the agent-trace panel + cost/latency badges show immediately on replay.
+  // Effectively run-once because the page remounts ChatShell via `key={...}`
+  // on conversation switch.
+  useEffect(() => {
+    if (!initialTrace?.length) return;
+    for (const seed of initialTrace) {
+      seedMessage(seed.messageId, seed.stepDurations, seed.final);
+    }
+  }, [initialTrace, seedMessage]);
 
   const appendDelta = useCallback((messageKey: string, content: string) => {
     setMessages((prev) =>

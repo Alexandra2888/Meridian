@@ -115,6 +115,29 @@ class ConversationRepo:
         await self.session.flush()
         return row
 
+    async def set_step_durations(
+        self,
+        conversation_id: str,
+        trace_id: str,
+        step_durations: dict[str, int],
+    ) -> None:
+        """Attach per-node durations to the assistant message of this turn.
+
+        The SSE handler computes durations as nodes finish and calls this once
+        the graph has completed. We identify the row by `(conversation_id,
+        trace_id)` — `trace_id` is unique per chat turn and the assistant row
+        is the only one written with it.
+        """
+
+        stmt = (
+            update(MessageRow)
+            .where(MessageRow.conversation_id == conversation_id)
+            .where(MessageRow.role == "assistant")
+            .where(MessageRow.trace_id == trace_id)
+            .values(step_durations=step_durations)
+        )
+        await self.session.execute(stmt)
+
     async def list_messages(self, conversation_id: str) -> list[MessageRow]:
         stmt = (
             select(MessageRow)

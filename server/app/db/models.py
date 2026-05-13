@@ -61,6 +61,9 @@ class MessageRow(Base):
     tokens_out: Mapped[int | None] = mapped_column(Integer)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     trace_id: Mapped[str | None] = mapped_column(String(64))
+    # Per-orchestrator-node durations in ms, e.g. {"plan": 2300, "synthesize": 1400}.
+    # Persisted so the agent-trace panel survives a page reload.
+    step_durations: Mapped[dict[str, int] | None] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     conversation: Mapped[ConversationRow] = relationship(back_populates="messages")
