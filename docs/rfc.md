@@ -19,22 +19,24 @@ The repo's `README.md` is the operator-facing document (how to run, what's deplo
 
 ### 0.1 On scope: product, not prototype
 
-Meridian originated as a response to a take-home design brief that asked for a 6-hour orchestration prototype. It is built as a **live, deployed product** instead. The framing:
+Meridian originated as a response to a take-home design brief that asked for a 6-hour orchestration prototype. It is built as a **deployment-ready product** — Dockerised API, Vercel-ready frontend, Fly Volume mount path defined, real CRM integration end-to-end. The deploy itself happens in §12.5a (Phase 5a) before submission; the README's "Live URL" line is populated when it lands.
+
+The framing:
 
 > **The brief asked for a prototype. Meridian is a product.**
 
-**Why a live product:**
+**Why a product (not a prototype):**
 
-- The stated problem — disconnected learner-facing agents — is a _learner-facing_ problem. Solving it visibly, on a URL a learner could actually visit, makes the demonstration of value tangible.
+- The stated problem — disconnected learner-facing agents — is a _learner-facing_ problem. The architecture is shaped for a real URL a learner could visit, with auth as the only deliberate gap between the v1 surface and a real production surface.
 - Real HubSpot integration tests the integration-brittleness risk against actual API quirks, rate limits, and network conditions. A stub cannot.
 - Streaming UX with live orchestration events (§4.7) exposes the architecture as it runs — the orchestrator's parallel execution is visible in the UI, not just claimed in the README.
-- Live deployment forces the architecture to survive its first real environment, which is where most prototypes break.
+- Deployment is wired end-to-end (Fly.io for the API with a Volume-mounted SQLite, Vercel for the FE), so the deploy step is a procedure, not a re-architecture.
 
 **Why this isn't scope drift:**
 
-- The brief is delivered exactly: orchestration between agents + one external system + a coherent response. The external system is real; the response is reachable from a real URL.
+- The brief is delivered exactly: orchestration between agents + one external system + a coherent response. The external system is real; the response shape is the same whether served from localhost or Fly.
 - Cuts are still extensive (see §2 non-goals): no auth, no Redis, no PII redaction, no light-mode toggle, no admin UI, no custom domain, no staging environment, no monitoring/alerting beyond defaults. Every one of those would be in a production-grade product. Scoping discipline lives in _which_ additions made the cut and _which_ were refused.
-- No auth is the single biggest scope cut. It removes ~80% of deployment complexity (login flows, sessions, JWT, password resets, OAuth, RBAC) — which is what makes the "live product" path tractable.
+- No auth is the single biggest scope cut. It removes ~80% of deployment complexity (login flows, sessions, JWT, password resets, OAuth, RBAC) — which is what makes the "real product" path tractable inside the time budget.
 
 **The accepted trade:** going past the brief's hour suggestion is a deliberate choice. The cuts are visible, the rationale is explicit, and the architectural decisions are owned end-to-end in this document.
 
@@ -66,14 +68,15 @@ Meridian is the orchestration layer that fixes this pattern. The design brief th
 - ✅ Single orchestrator that classifies intent and routes to specialist agents
 - ✅ Two specialist agents: Discovery (program recommendation) + Career (job outcomes)
 - ✅ One external system: **live HubSpot CRM integration** (real API, real test contacts) with a stub available as fallback for offline development and evals
-- ✅ **Deployed live**: API on Fly.io (with SQLite on a Fly Volume), frontend on Vercel — reachable from a single shareable URL
+- ✅ **Deployment-ready**: Dockerised API (Fly.io target with SQLite on a Fly Volume), Vercel-ready frontend, secrets management via Fly + Vercel env vars. The deploy procedure is documented in §9 and executed in Phase 5a (§12.5a).
 - ✅ Coherent synthesis: when both agents are needed, output reads as one voice, not concatenated
 - ✅ Conversation state across turns (so follow-ups work)
+- ✅ Per-learner conversation history with a sidebar — rename, delete, switch between conversations
 - ✅ Minimal but real evals: a small golden dataset + routing accuracy + LLM-as-judge response quality
 - ✅ Observability: trace every run, see which agents fired and why
 - ✅ Cost & latency tracking per request
 - ✅ **Streaming UX with live orchestration events** — agent-status events emit as each LangGraph node runs (Discovery started → Career started → Synthesis started → tokens streaming → final metadata). The UI exposes the architecture as it runs.
-- ✅ **Learner-facing frontend** (Next.js): chat interface, visible agent trace panel, visible learner context from CRM
+- ✅ **Learner-facing frontend** (Next.js 16): chat interface, visible agent trace panel, visible learner context from CRM
 - ✅ **Considered visual craft**: dark-default aesthetic, mobile-first responsive, semantic design tokens layered on shadcn. The frontend reflects the author's senior frontend engineering background; visual polish is part of the architecture's value, not decoration over it.
 - ✅ Clear stubbed-vs-real boundary documented in README (mostly real; the stub exists as a dev fallback)
 
@@ -121,22 +124,22 @@ This single query forces every architectural decision: it requires routing to tw
 
 Pulled together here so the full stack is visible in one place. Each choice is justified in the subsection where it lives architecturally; this table is the index.
 
-| Layer                  | Choice                                                                       | Defended in                                                                                                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Language               | **Python 3.12**                                                              | §0 — LLM ecosystem maturity; production AI experience for the author is in Python                                                                                              |
-| Web framework          | **FastAPI**                                                                  | §4.7 — native async, SSE-friendly via `StreamingResponse`, Pydantic-first                                                                                                      |
-| Package + venv manager | **uv**                                                                       | New industry default in 2026: 10–100× faster than pip, single tool replaces pip + venv + pip-tools                                                                             |
-| Orchestration          | **LangGraph**                                                                | §4.4 — state-machine model for deterministic routing; native parallelism via `Send`; `astream_events` for the streaming event protocol                                         |
-| LLM clients            | **LangChain integrations** (OpenAI + Anthropic)                              | §4.5 — model-swappable in one config line                                                                                                                                      |
-| Validation + schemas   | **Pydantic v2**                                                              | Used everywhere — request/response models, structured LLM outputs from the planner, `LearnerProfile` shape, SSE event payloads. Single source of truth between agents and API. |
-| ORM                    | **SQLAlchemy 2.0** (async)                                                   | §6 — works against SQLite today; Postgres-ready models for v2 migration                                                                                                        |
-| Migrations             | **Alembic**                                                                  | §6 — autogenerates from SQLAlchemy models; same migrations work against either engine                                                                                          |
-| Database (local dev)   | **SQLite**                                                                   | §6.1 — zero ops, anyone can clone and run, evals are deterministic                                                                                                             |
-| Database (deployed)    | **SQLite on Fly Volume**                                                     | §6.1, §9.3 — same engine as local; single-writer pattern fits v1 scale; defensible production choice                                                                           |
-| CRM                    | **HubSpot** (`hubspot-api-client`) + stub fallback                           | §4.6 — real API in production, stub via `CRM_PROVIDER=stub` for evals and offline dev                                                                                          |
-| Observability          | **Structured logs** (`structlog`) + in-app trace panel + per-turn DB metrics | §4.5, §7 — every node traced in the trace panel, every LLM call costed and persisted. External observability platforms (LangSmith, Datadog) are v2.                            |
-| Resilience             | `httpx` timeouts, `tenacity` for retries, custom circuit breaker             | §4.6 — applied to HubSpot client; same patterns ready for future external systems                                                                                              |
-| Testing                | **pytest** + **pytest-asyncio**                                              | LangGraph nodes tested in isolation with mocked LLM; routing tested end-to-end against stub CRM                                                                                |
+| Layer                  | Choice                                                                                                                            | Defended in                                                                                                                                                                                                      |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language               | **Python 3.12**                                                                                                                   | §0 — LLM ecosystem maturity; production AI experience for the author is in Python                                                                                                                                |
+| Web framework          | **FastAPI**                                                                                                                       | §4.7 — native async, SSE-friendly via `StreamingResponse`, Pydantic-first                                                                                                                                        |
+| Package + venv manager | **uv**                                                                                                                            | New industry default in 2026: 10–100× faster than pip, single tool replaces pip + venv + pip-tools                                                                                                               |
+| Orchestration          | **LangGraph**                                                                                                                     | §4.4 — state-machine model for deterministic routing; native parallelism via `Send`; `astream_events` for the streaming event protocol                                                                           |
+| LLM clients            | **OpenAI via `langchain-openai`**                                                                                                 | §4.5 — model-per-role configurable (planner/agent/synthesizer) via env vars; cross-provider support (Anthropic, Bedrock) is v2 — the factory in `clients/llm.py` is in place but only returns `ChatOpenAI` today |
+| Validation + schemas   | **Pydantic v2**                                                                                                                   | Used everywhere — request/response models, structured LLM outputs from the planner, `LearnerProfile` shape, SSE event payloads. Single source of truth between agents and API.                                   |
+| ORM                    | **SQLAlchemy 2.0** (async)                                                                                                        | §6 — works against SQLite today; Postgres-ready models for v2 migration                                                                                                                                          |
+| Migrations             | **Alembic**                                                                                                                       | §6 — autogenerates from SQLAlchemy models; same migrations work against either engine                                                                                                                            |
+| Database (local dev)   | **SQLite**                                                                                                                        | §6.1 — zero ops, anyone can clone and run, evals are deterministic                                                                                                                                               |
+| Database (deployed)    | **SQLite on Fly Volume**                                                                                                          | §6.1, §9.3 — same engine as local; single-writer pattern fits v1 scale; defensible production choice                                                                                                             |
+| CRM                    | **HubSpot** (`hubspot-api-client`) + stub fallback                                                                                | §4.6 — real API in production, stub via `CRM_PROVIDER=stub` for evals and offline dev                                                                                                                            |
+| Observability          | **Structured logs** (`structlog`) + in-app trace panel + per-message DB metrics. Optional LangSmith hook via `LANGSMITH_API_KEY`. | §4.5, §7, §10 — every node traced in the trace panel, every LLM call costed and persisted. LangSmith is wired but off-by-default; promoting it to a production dependency (dashboards, alerts) is v2.            |
+| Resilience             | `asyncio.wait_for` timeouts, `tenacity` retries, custom circuit breaker                                                           | §4.6 — applied to the HubSpot SDK client; same patterns ready for future external systems                                                                                                                        |
+| Testing                | **pytest** + **pytest-asyncio**                                                                                                   | Repo CRUD, conversation API, title generation (LLM mocked), routing, schemas, stub CRM, HubSpot circuit breaker. LLM-touching tests live in `evals/`, not the unit suite.                                        |
 
 **Deliberately not picked:**
 
@@ -155,7 +158,7 @@ Pulled together here so the full stack is visible in one place. Each choice is j
 
 ### 4.1 Shape: single orchestrator with a routing layer
 
-I considered four shapes:
+Four shapes considered:
 
 1. **Single mega-prompt** — one LLM call, all context dumped in. Cheap, fast, but unmaintainable past 2 agents and impossible to eval per-agent.
 2. **Pure router** — classifier picks one agent; that agent answers alone. Doesn't handle compound questions ("program AND jobs") which is literally the example in the brief. **Disqualified.**
@@ -174,7 +177,7 @@ I considered four shapes:
 │                        │                                     │
 │                        ▼                                     │
 │              ┌─────────────────────┐                         │
-│              │  1. Load context    │ ◄── CRM stub            │
+│              │  1. Load context    │ ◄── CRM (HubSpot/stub)  │
 │              │     (CRM lookup)    │     (learner state)     │
 │              └─────────┬───────────┘                         │
 │                        ▼                                     │
@@ -208,14 +211,15 @@ I considered four shapes:
 
 States:
 
-- `load_context` → pulls learner record from CRM stub
+- `load_context` → pulls learner record from CRM (HubSpot or stub)
 - `plan` → LLM call: classifies intent into `{discovery, career, both, neither}`; outputs structured plan
 - `discovery_agent` → conditional, runs if plan includes discovery
 - `career_agent` → conditional, runs if plan includes career
 - `synthesize` → unifies outputs into one coherent response (or echoes single-agent output if only one ran)
-- `persist` → write conversation turn + trace metadata to SQLite
+- `persist` → write conversation message + trace metadata to SQLite
+- `title` → async post-response: when a conversation has no title yet, an LLM call generates a short label from the first user message + assistant reply. Runs off the SSE wire — the learner has already received the full response by the time `title` executes, so it never blocks streaming latency.
 
-Routing edges from `plan` are conditional on the plan output. Agents run **in parallel** when both are needed (LangGraph supports this natively via `Send` API). This matters for latency at scale.
+Routing edges from `plan` are conditional on the plan output. Discovery and Career run **in parallel** when both are needed (LangGraph supports this natively via `Send` API). This matters for latency at scale.
 
 ### 4.4 Why LangGraph specifically (build vs buy)
 
@@ -232,14 +236,14 @@ Routing edges from `plan` are conditional on the plan output. Agents run **in pa
 
 ### 4.5 Model choices
 
-| Step                  | Model         | Why                                                                            |
-| --------------------- | ------------- | ------------------------------------------------------------------------------ |
-| Intent classification | `gpt-4o-mini` | Cheap, fast, classification is easy. ~$0.0002/call.                            |
-| Discovery agent       | `gpt-4o-mini` | Recommendation from a small program catalog — doesn't need frontier reasoning. |
-| Career agent          | `gpt-4o-mini` | Same — career advice grounded in retrieved job data.                           |
-| Synthesis             | `gpt-4o`      | Quality of final response matters most; this is what the learner reads.        |
+| Step                  | Model               | Why                                                                                                          |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Intent classification | `gpt-4o-mini` (T=0) | Cheap, fast, classification is easy. ~$0.0002/call. Temperature 0 for deterministic routing.                 |
+| Discovery agent       | `gpt-4o-mini`       | Recommendation from a small program catalog — doesn't need frontier reasoning.                               |
+| Career agent          | `gpt-4o-mini`       | Same — career advice grounded in retrieved job data.                                                         |
+| Synthesis             | `gpt-4o` (T=0.4)    | Quality of final response matters most; this is what the learner reads. Small temperature for natural prose. |
 
-All model choices are config values, not hardcoded — swappable to Anthropic Claude in one line via the LLM factory in `api/app/clients/llm.py`.
+Model choices are config values per role (`MODEL_PLANNER`, `MODEL_AGENT`, `MODEL_SYNTHESIZER`), not hardcoded — picked up by the LLM factory in `server/app/clients/llm.py`. Today the factory only returns `ChatOpenAI`; swapping the provider (Anthropic Claude, Bedrock) is a small extension to the factory rather than a model-name change, and is flagged as a v2 add.
 
 **Cost back-of-envelope (per request, both agents firing):**
 
@@ -276,7 +280,7 @@ class LearnerProfile(BaseModel):
     country: Optional[str]
 ```
 
-**HubSpot field mapping** (lives in `api/app/clients/crm/hubspot.py`, documented inline):
+**HubSpot field mapping** (lives in `server/app/clients/crm/hubspot.py`, documented inline):
 
 | `LearnerProfile` field | HubSpot Contact property                                                                     |
 | ---------------------- | -------------------------------------------------------------------------------------------- |
@@ -299,10 +303,10 @@ class LearnerProfile(BaseModel):
 
 **Resilience patterns in `HubSpotCRMClient`:**
 
-- 5-second timeout on every call (HubSpot p99 is ~1s but tail latency exists)
-- Retry with exponential backoff on 429 (rate limit) and 5xx, max 2 retries
-- Circuit breaker: after 3 consecutive failures, fall through to a degraded mode where the orchestrator proceeds with minimal context and notes "couldn't load profile" in the response — never 500s the request
-- All HubSpot calls traced with timing, response code, and retry count
+- 5-second timeout on every call via `asyncio.wait_for` (HubSpot p99 is ~1s but tail latency exists)
+- Retry with exponential backoff on 429 (rate limit) and 5xx via `tenacity`, max 2 retries
+- Circuit breaker: after 3 consecutive failures, fall through to a degraded mode. On the `/chat` path, the orchestrator proceeds with minimal context and notes "couldn't load profile" in the response — it never 500s the chat request. On `/learner/{id}`, the degraded mode returns 503, since there is no orchestrator context to fall back to and the learner card is the direct subject of the request.
+- Structured logs on every HubSpot interaction: failure mode, circuit state, retry attempt. (Full per-call timing + status histograms are a v2 observability add — see §10.)
 
 **Why this still uses the repository pattern even though we're going live:**
 The `CRM_PROVIDER` env var lets the eval harness run against the stub (deterministic, no network, no rate limits), while production uses HubSpot. Same interface, both implementations live in the repo. This is the production pattern, not a workaround.
@@ -311,7 +315,7 @@ This is the single most important architecture decision for "productionization p
 
 ### 4.7 Streaming: live orchestration events
 
-End-to-end orchestration (CRM lookup + plan + 2 parallel agents + synthesis) will run ~6–10 seconds. Sitting in a typing indicator that long during a demo _feels_ broken even when it isn't. More important: this is the role of an AI Product Specialist — a credible AI product in 2026 streams. A non-streaming chat shipped to learners would feel dated on day one.
+End-to-end orchestration (CRM lookup + plan + 2 parallel agents + synthesis) runs ~6–10 seconds. Sitting in a typing indicator that long during a demo _feels_ broken even when it isn't. More important: a credible AI product in 2026 streams. A non-streaming chat shipped to learners would feel dated on day one.
 
 The chosen pattern is **lock-step orchestration events + token streaming**, not just token streaming. The UI exposes the architecture as it runs.
 
@@ -335,13 +339,13 @@ The orchestration is the _show_, not just plumbing. The viewer sees Discovery an
 
 The FastAPI `/chat` endpoint returns `StreamingResponse` emitting newline-delimited JSON events. Five event types:
 
-| Event    | Emitted when                     | Payload                                                                  |
-| -------- | -------------------------------- | ------------------------------------------------------------------------ |
-| `status` | Each LangGraph node enters/exits | `{node, status: "started"\|"finished", duration_ms?}`                    |
-| `delta`  | Synthesis LLM yields a token     | `{content: "...token..."}`                                               |
-| `error`  | Anything blows up                | `{message, recoverable}`                                                 |
-| `final`  | End of run                       | `{agents_invoked, total_latency_ms, cost_usd, conversation_id, turn_id}` |
-| `done`   | Stream complete                  | (terminator, no payload)                                                 |
+| Event    | Emitted when                     | Payload                                                                     |
+| -------- | -------------------------------- | --------------------------------------------------------------------------- |
+| `status` | Each LangGraph node enters/exits | `{node, status: "started"\|"finished", duration_ms?}`                       |
+| `delta`  | Synthesis LLM yields a token     | `{content: "...token..."}`                                                  |
+| `error`  | Anything blows up                | `{message, recoverable}`                                                    |
+| `final`  | End of run                       | `{agents_invoked, total_latency_ms, cost_usd, conversation_id, message_id}` |
+| `done`   | Stream complete                  | (terminator, no payload)                                                    |
 
 The `final` event carries everything the trace panel needs that _only_ exists once the run is complete. The `delta` stream is just the synthesis output — discovery/career agent calls are non-streaming (they're internal, the learner never sees their raw output).
 
@@ -366,14 +370,19 @@ async def chat_stream(request: ChatRequest) -> AsyncIterator[str]:
 
 The key trick: only synthesis tokens stream to the client. Internal agent LLM calls produce structured outputs the orchestrator consumes — they don't get piped to the learner.
 
-#### Vercel AI SDK on the FE
+#### Frontend consumption
 
-`useChat` from `ai/react` handles streaming natively when the server emits the SDK's expected SSE format. Meridian uses a slightly custom integration: a stream protocol where `delta` events drive message content (handled by `useChat`'s standard behavior) and `status`/`final` events are read in a side-channel `onMessage` handler that updates the trace-panel state.
+The frontend consumes the SSE stream with a custom parser built on native `fetch` + `ReadableStream` rather than the Vercel AI SDK's `useChat`. Two reasons:
+
+1. The five-event protocol above isn't a shape `useChat` understands natively — `status`/`final`/`error` events would need to be smuggled through `useChat`'s extension hooks, which costs more clarity than a custom parser saves.
+2. Building the parser directly gives explicit control over event routing into two separate stores (messages vs trace) without fighting `useChat`'s assumptions about what a "message" is.
 
 Two state stores on the FE:
 
-- **Messages** — handled by `useChat`, contains the streamed assistant text.
-- **Trace** — handled by a Zustand store or React Context, populated from `status` events as they arrive, finalized by the `final` event. Mapped by `turn_id` so each message has its own trace state.
+- **Messages** — local state on the chat shell, contains the streamed assistant text built from `delta` events.
+- **Trace** — Zustand store, populated from `status` events as they arrive, finalized by the `final` event. Mapped by `message_id` so each message has its own trace state.
+
+Trace data also persists server-side per message (`agents_invoked` + `step_durations` on the `messages` row), so reloading a past conversation re-hydrates the trace panel from the DB rather than requiring the run to re-execute.
 
 #### Why this matters more than "it streams faster"
 
@@ -389,24 +398,27 @@ This is also a forcing function for clean architecture. Streaming surfaces every
 
 Pulled together here so the full stack is visible in one place. Each choice is justified in the subsection where it lives architecturally; this table is the index.
 
-| Layer              | Choice                                                         | Defended in                                                                                                    |
-| ------------------ | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Framework          | **Next.js 15** (App Router)                                    | §5.1 — daily driver, server-side route handlers handle the SSE proxy cleanly                                   |
-| Language           | **TypeScript 5** (strict mode)                                 | Used everywhere; types mirror the FastAPI Pydantic schemas via a shared `lib/types.ts`                         |
-| Styling            | **Tailwind CSS v4**                                            | §5.1 — utility-first speed with full token customization via CSS variables                                     |
-| Components         | **shadcn/ui**                                                  | §5.1 — modern React conventions, copy-in primitives (not a runtime dependency)                                 |
-| Chat state         | **Vercel AI SDK** (`useChat` from `ai/react`)                  | §4.7, §5.1 — native SSE streaming, message history, optimistic UI                                              |
-| Trace state        | **Zustand**                                                    | §4.7, §5.1 — side-channel store for orchestration events that don't fit the message model; mapped by `turn_id` |
-| Icons              | **lucide-react**                                               | shadcn default, tree-shakable                                                                                  |
-| Data fetching      | **Native `fetch` in route handlers + React Server Components** | No SWR/React Query needed at this scope — one streaming endpoint and one `/learner/{id}` lookup                |
-| Runtime validation | **Zod**                                                        | Validates SSE event payloads on the client before they hit Zustand; same `LearnerProfile` shape as backend     |
-| Linting            | **ESLint** + **Prettier**                                      | Next.js defaults                                                                                               |
-| Testing            | **Vitest** + **React Testing Library**                         | Component tests for the trace panel state transitions                                                          |
+| Layer              | Choice                                                         | Defended in                                                                                                       |
+| ------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Framework          | **Next.js 16** (App Router) + **React 19**                     | §5.1 — daily driver, server-side route handlers handle the SSE proxy cleanly                                      |
+| Language           | **TypeScript 5** (strict mode)                                 | Used everywhere; types mirror the FastAPI Pydantic schemas via a shared `lib/types.ts`                            |
+| Styling            | **Tailwind CSS v4**                                            | §5.1 — utility-first speed with full token customization via CSS variables                                        |
+| Components         | **shadcn/ui** (Radix primitives)                               | §5.1 — modern React conventions, copy-in primitives (not a runtime dependency)                                    |
+| Chat state         | **Local component state + custom SSE parser**                  | §4.7 — native `fetch` + `ReadableStream` gives full control over the five-event protocol                          |
+| Trace state        | **Zustand**                                                    | §4.7, §5.1 — side-channel store for orchestration events that don't fit the message model; mapped by `message_id` |
+| Sidebar state      | **Zustand**                                                    | Mobile drawer open/close, kept separate from trace store for clarity                                              |
+| Icons              | **lucide-react**                                               | shadcn default, tree-shakable                                                                                     |
+| Data fetching      | **Native `fetch` in route handlers + React Server Components** | No SWR/React Query needed at this scope — endpoints are read-on-mount or driven by SSE                            |
+| Runtime validation | **Zod**                                                        | Validates SSE event payloads on the client before they hit Zustand; same `LearnerProfile` shape as backend        |
+| Linting            | **ESLint** + **Prettier**                                      | Next.js defaults                                                                                                  |
+| Testing            | **Playwright** (e2e happy-path)                                | Cross-stack happy-path coverage (load → send → trace → reload → rename → delete → mobile + 404)                   |
+| Pkg manager        | **pnpm**                                                       | Faster than npm, strict by default                                                                                |
 
 **Deliberately not picked:**
 
-- ❌ **Redux / Redux Toolkit** — Zustand is the right tier for one side-channel store; Redux is over-engineered here.
-- ❌ **React Query / SWR / TanStack Query** — only two endpoints, only one is read-on-mount. The infrastructure isn't earning its keep.
+- ❌ **Vercel AI SDK (`useChat`)** — considered and discarded. The five-event SSE protocol (§4.7) is richer than `useChat`'s message model. A custom parser is clearer than fighting the SDK's assumptions about what a message is.
+- ❌ **Redux / Redux Toolkit** — Zustand is the right tier for two side-channel stores; Redux is over-engineered here.
+- ❌ **React Query / SWR / TanStack Query** — only two endpoint families, both either read-on-mount or driven by SSE. The infrastructure isn't earning its keep.
 - ❌ **styled-components / Emotion / vanilla-extract** — Tailwind covers everything; runtime CSS-in-JS is a perf regression for no gain.
 - ❌ **Storybook** — useful at scale, theatre at this scope. The components live in one app and are used in one place.
 - ❌ **Framer Motion** — shadcn's built-in CSS transitions cover the trace-panel animations; importing Framer for a few state transitions is overkill.
@@ -415,8 +427,8 @@ Pulled together here so the full stack is visible in one place. Each choice is j
 
 **Why this combination is deliberate:**
 
-1. The picks are 2026-idiomatic without being trendy. Tailwind v4 + shadcn + Vercel AI SDK is the current default modern AI-product stack.
-2. The cuts (no Storybook, no Redux, no React Query) reflect actual scope — they would all be earned additions at larger scale, but here they would be infrastructure without payload.
+1. The picks are 2026-idiomatic without being trendy. Tailwind v4 + shadcn + custom SSE is the current default modern AI-product stack.
+2. The cuts (no Storybook, no Redux, no React Query, no Vercel AI SDK) reflect actual scope — they would all be earned additions at larger scale, but here they would be infrastructure without payload.
 3. The Zustand-for-trace decision encodes separation of concerns: chat state and orchestration state are different state machines, and treating them as one creates coupling.
 
 ### 5.1 Why a real frontend (not Swagger or curl)
@@ -434,52 +446,65 @@ The remaining trap to avoid: visual craft is not the _primary_ evaluation axis �
 
 Everything else (input box, message bubbles, send button) is table-stakes. These three are what turn the UI from "chat app" into **orchestration cockpit**:
 
-1. **Live agent trace panel** — collapsible, per-message, **animates in real-time**. Each LangGraph node pushes a `status` event as it starts and finishes (see §4.7). The panel renders these live: Discovery and Career agents appearing side-by-side, ticking from "thinking..." to "✓ 2.1s" as they finish. This is the most architecturally visible component in the product.
+1. **Live agent trace panel** — collapsible, per-message, **animates in real-time**. Each LangGraph node pushes a `status` event as it starts and finishes (see §4.7). The panel renders these live: Discovery and Career agents appearing side-by-side, ticking from "thinking..." to "✓ 2.1s" as they finish. Trace data persists server-side per message (`agents_invoked` + `step_durations`), so reloading a past conversation re-hydrates the panel from the DB. This is the most architecturally visible component in the product.
 2. **Learner context card** — small panel at the top of the chat. Renders the CRM lookup: name, enrolment status, program, interests. Without it, the CRM integration is invisible plumbing. With it, the orchestrator visibly _uses_ external state.
-3. **Streamed synthesis with stage-aware indicator** — the assistant response streams token-by-token (Vercel AI SDK `useChat`), with a typing indicator that surfaces the _current orchestration stage_ ("Synthesizing response...") rather than a generic spinner. The product feels alive; the architecture stays legible.
+3. **Streamed synthesis with stage-aware indicator** — the assistant response streams token-by-token via the custom SSE parser, with a typing indicator that surfaces the _current orchestration stage_ ("Synthesizing response...") rather than a generic spinner. The product feels alive; the architecture stays legible.
 
 These three directly map to the "Productionization potential", "Thoughtfulness of solution", and "Communication" evaluation criteria. They are not decoration — they are how the architecture becomes visible to a non-technical stakeholder.
 
-### 5.3 Component inventory (scope discipline)
+### 5.3 Component inventory
 
 ```
 app/
-  page.tsx                # the chat page (single route, no routing complexity needed)
-  layout.tsx
-  globals.css
-  api/chat/route.ts       # proxies POST /chat to FastAPI, pipes SSE through
+  page.tsx                # Server component — fetches learner + conversations
+  layout.tsx              # Root layout + fonts
+  error.tsx               # Route-segment error boundary
+  global-error.tsx        # Layout-level error boundary
+  not-found.tsx           # Styled 404
+  globals.css             # Tailwind v4 + design tokens
+  api/
+    chat/route.ts                       # SSE proxy → FastAPI
+    conversations/route.ts              # list per learner
+    conversations/[id]/route.ts         # get / patch / delete
 components/
   chat/
-    chat-shell.tsx        # holds useChat, wires the SSE event router
+    chat-shell.tsx        # holds SSE consumer + message state
     message-list.tsx
     message-bubble.tsx    # user vs assistant variants
     composer.tsx          # input + send
     agent-trace.tsx       # the cockpit panel — collapsible, live-animating
     trace-step.tsx        # single agent row (pending/running/done states)
     cost-badge.tsx        # latency + cost pill on each assistant message
+  conversations/
+    sidebar.tsx           # per-learner conversation history
+    conversation-item.tsx # inline rename + delete
+    mobile-toggle.tsx     # hamburger → drawer (<md)
   learner/
+    learner-picker.tsx    # header dropdown, switches ?learner=…
     learner-context-card.tsx  # top-of-page CRM card
   ui/                     # shadcn primitives (button, card, badge, collapsible, etc.)
 lib/
-  stream.ts               # SSE parser, dispatches events to useChat + Zustand
-  trace-store.ts          # Zustand store for per-turn trace state
+  api.ts                  # fetchLearner / fetchConversations / fetchConversation
+  stream.ts               # SSE block parser + async iterator
+  trace-store.ts          # Zustand: per-message trace + final telemetry
+  sidebar-store.ts        # Zustand: mobile drawer open/close
+  types.ts                # TS types mirroring server Pydantic shapes
 ```
-
-~8 custom components + 2 lib files. Anything beyond this is scope creep.
 
 ### 5.4 Frontend scope cuts (deliberate)
 
 **In scope** (because they earn their cost):
 
 - ✅ **Dark mode as the default aesthetic** — for an AI product in 2026, dark is the visual default (ChatGPT, Claude, Perplexity, v0). Light-mode-only reads as dated.
-- ✅ **Mobile-responsive layout** — built mobile-first, breakpoints up to desktop. Learner-facing implies mobile reality; phones are where most online-university learners check things.
+- ✅ **Mobile-responsive layout** — built mobile-first, breakpoints up to desktop. The sidebar collapses to a drawer below `md`. Learner-facing implies mobile reality; phones are where most online-university learners check things.
 - ✅ **Design-system discipline** — semantic color tokens (`--color-bg-elevated`, `--color-text-muted`, etc.) layered on Tailwind v4's CSS variables; intentional type ramp; consistent spacing scale. Shadcn primitives styled through this token system, not directly.
 - ✅ **Trace-step transitions** — CSS-only state transitions (pending → running → done) on the live trace panel.
+- ✅ **Per-learner conversation history with rename and delete** — the DB persists everything; surfacing it as a sidebar is cheap and useful. Mobile collapses to a drawer.
+- ✅ **Error + 404 boundaries** — `app/error.tsx`, `app/global-error.tsx`, and a styled `app/not-found.tsx`. Costs little, signals attention to operational edges.
 
 **Out of scope** (cut deliberately):
 
 - ❌ Auth screen (single demo learner ID from URL param or env).
-- ❌ Conversation history sidebar (single conversation per session).
 - ❌ Settings page, model picker UI, admin dashboard.
 - ❌ Light-mode toggle — dark is the only theme in v1. A light variant is one CSS variable layer away if needed later.
 - ❌ Custom design-system package or multi-app token export — there's one app; tokens live inline in `globals.css`.
@@ -489,7 +514,7 @@ These cuts are defensible additions at production scale. At v1 scope, they would
 
 ### 5.5 Visual language
 
-A short brief for the agent so the styling is decided up front, not improvised:
+A short brief to keep styling deliberate up front:
 
 | Layer               | Choice                                                                                                                                 |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -512,10 +537,10 @@ This is a one-pass styling brief, not a design system. The point is to make the 
 
 Meridian uses SQLite locally **and** in deployment. The architectural choice is defended in §9.3; this section covers the implementation.
 
-- **Local development:** SQLite file at `./data/meridian.db`. Zero setup; a fresh clone runs with no database installation required.
+- **Local development:** SQLite file at `./server/data/meridian.db`. Zero setup; a fresh clone runs with no database installation required.
 - **Deployed:** SQLite file at `/data/meridian.db` on a Fly Volume mounted into the API container. Volume snapshots provide v1-grade backup.
 
-SQLAlchemy 2.0 + Alembic are used regardless. The motivation isn't "we need an ORM today" — it's that the data-access layer is shaped for the Postgres migration whenever scale warrants it. The repository pattern (`ConversationRepo`, `EvalRepo`) means swapping the connection string is a one-line change at the engine boundary; query code is engine-agnostic.
+SQLAlchemy 2.0 + Alembic are used regardless. The motivation isn't "we need an ORM today" — it's that the data-access layer is shaped for the Postgres migration whenever scale warrants it. The repository pattern (`ConversationRepo`, `MessageRepo`, `EvalRepo`) means swapping the connection string is a one-line change at the engine boundary; query code is engine-agnostic.
 
 **The v2 migration to Postgres** is documented as a step-by-step procedure in §10:
 
@@ -533,19 +558,21 @@ Nothing in the application code changes. That's the productionization-potential 
 conversations
   id          UUID PK
   learner_id  TEXT
+  title       TEXT          -- generated from first user message
   created_at  TIMESTAMP
+  updated_at  TIMESTAMP
 
-turns
+messages
   id              UUID PK
   conversation_id UUID FK
   role            TEXT  -- 'user' | 'assistant'
   content         TEXT
   agents_invoked  JSON  -- ['discovery', 'career']
+  step_durations  JSON  -- {load_context: 180, plan: 340, discovery: 2100, …}
   latency_ms      INT
   tokens_in       INT
   tokens_out      INT
   cost_usd        NUMERIC
-  trace_id        TEXT
   created_at      TIMESTAMP
 
 eval_runs
@@ -555,13 +582,15 @@ eval_runs
   passed       BOOL
   score        NUMERIC
   notes        TEXT
+  extra        JSON       -- judge reasoning, routing decision, latency
   created_at   TIMESTAMP
 ```
 
-Two reasons to log per-turn metadata from day one:
+Three reasons to log per-message metadata from day one:
 
 1. The evals layer reads it for offline analysis and regression detection.
-2. The same fields support production monitoring without schema migration — `tokens_in`, `tokens_out`, `cost_usd`, `latency_ms` per turn are exactly what an observability dashboard would chart.
+2. The same fields support production monitoring without schema migration — `tokens_in`, `tokens_out`, `cost_usd`, `latency_ms` per message are exactly what an observability dashboard would chart.
+3. The trace panel re-hydrates from `agents_invoked` + `step_durations` on conversation reload — the architecture is visible even on historical conversations, not just live runs.
 
 ---
 
@@ -574,14 +603,14 @@ The brief asks: _"How would you know the system is getting better or worse?"_ Me
 - A `golden_dataset.jsonl` with **15 hand-written test cases**:
   - 5 discovery-only queries
   - 5 career-only queries
-  - 5 compound queries (both agents)
-  - Includes 2 "edge" cases: empty query, off-topic query (testing routing robustness)
+  - 3 compound queries (both agents)
+  - 2 edge cases: off-topic query + ambiguous query (testing routing robustness)
 - A `run_evals.py` script that:
   1. Loops every test case
-  2. Calls the orchestrator
+  2. Calls the orchestrator (against the stub CRM for determinism)
   3. Checks: **(a) routing correctness** (did the right agents fire?) and **(b) response quality** (LLM-as-judge with a rubric, scored 1–5)
   4. Writes results to `eval_runs` table + a markdown summary
-- One simple metric printed at the end: **routing accuracy %** and **mean response quality**.
+- CLI exit code: non-zero when routing accuracy falls below a `--min-routing-accuracy` threshold — usable as a CI gate.
 
 ### 7.2 What production would add
 
@@ -638,7 +667,7 @@ The brief's risk categories are: cost, latency, hallucination, privacy, integrat
 
 - Every external system behind a `Client` interface (`CRMClient` exists, future `LMSClient`, `BillingClient` follow the same pattern). The HubSpot integration is real _and_ swappable — same interface, different implementation behind `CRM_PROVIDER`.
 - Treat each agent as a service with a defined contract (input schema, output schema). Agents are not allowed to know about each other — they only know about the orchestrator.
-- Timeouts (5s), exponential backoff retries (max 2), circuit breaker (3 consecutive failures → degraded mode). If HubSpot is down, orchestrator proceeds with empty context and notes "couldn't load profile" in the response — never 500s.
+- Timeouts (5s), exponential backoff retries via `tenacity` (max 2), circuit breaker (3 consecutive failures → degraded mode). On `/chat`, the orchestrator proceeds with empty context and notes "couldn't load profile" — chat never 500s. The direct `/learner/{id}` endpoint returns 503 in degraded mode (no orchestrator to fall back to).
 - The fact that this prototype runs against real HubSpot with real network conditions is itself the mitigation: the patterns are tested against reality, not assumptions.
 
 **Cost and privacy** are real concerns but secondary at this scale. LLM costs at 10k learners × 5 queries/month run ~$300/month — small enough to be a constraint, not a target. Privacy is more policy than architecture for v1 (no PII redaction yet — flagged for v2 in §10).
@@ -647,7 +676,7 @@ The brief's risk categories are: cost, latency, hallucination, privacy, integrat
 
 ## 9. Deployment
 
-The product ships at a live URL. Local development remains the canonical path for engineering work (predictable, low-latency, debugger-attached), but the deployed environment is the operational reference.
+The product is designed to ship at a live URL. Local development is the canonical path for engineering work (predictable, low-latency, debugger-attached); the deployed environment becomes the operational reference once Phase 5a (§12.5a) lands.
 
 ### 9.1 Stack
 
@@ -714,33 +743,34 @@ SQLite is a deliberate v1 choice, not a placeholder. The constraints it imposes 
 
 ## 10. Productionization at platform scale
 
-Meridian already runs against real HubSpot and a deployed FastAPI with persistent storage — the orchestration architecture is production-shaped. The gaps for institution-grade operations are scale, security, durability, and operational maturity, not foundational re-architecture:
+Meridian's orchestration runs against real HubSpot end-to-end, with persistence wired and the deployment path documented and executable (Phase 5a in §12.5a). The orchestration architecture is production-shaped already. The gaps for institution-grade operations are scale, security, durability, and operational maturity, not foundational re-architecture:
 
-> **From the deployed v1 to platform scale (10k learners, growing):** The orchestration layer and CRM integration are production-shaped already. The migration steps are: (1) **Migrate SQLite → Postgres** (Supabase, Neon, or self-hosted) — run existing Alembic migrations against the new DB, dump-and-restore data, change `DB_URL`; application code unchanged. This unlocks horizontal autoscaling, transactional backups, and row-level security for multi-tenancy. (2) **Add Redis** for conversation context caching, intent-classifier result caching for repeat queries, and HubSpot response caching to stay well under rate limits. (3) **Wire LangSmith** for production tracing (the in-app trace panel covers v1; LangSmith adds team-shared traces, historical search, and routing-accuracy drift alerts). Add **Sentry** for error tracking and alerting. (4) **CI eval gate** (GitHub Actions) so routing-accuracy regressions block merges. (5) **PII redaction** at the client boundary before any data hits LLM providers. (6) **Authentication** via Auth0 or Supabase Auth with row-level security on `conversations` and `turns`. (7) **Per-tenant rate limiting** for institutions serving partner schools. (8) **Replace Fly free tier** with a paid org, autoscaling rules tied to request volume, stage environment plus canary deploys. (9) **Durability upgrade**: Litestream (if staying on SQLite for any service) or managed-Postgres backups, point-in-time recovery, multi-region replicas. Total path-to-production effort: estimated 2–3 weeks for one engineer, mostly security hardening and observability — the orchestration architecture itself is production-shaped already.
+> **From v1 to platform scale (10k learners, growing):** The orchestration layer and CRM integration are production-shaped already. The migration steps are: (1) **Migrate SQLite → Postgres** (Supabase, Neon, or self-hosted) — run existing Alembic migrations against the new DB, dump-and-restore data, change `DB_URL`; application code unchanged. This unlocks horizontal autoscaling, transactional backups, and row-level security for multi-tenancy. (2) **Add Redis** for conversation context caching, intent-classifier result caching for repeat queries, and HubSpot response caching to stay well under rate limits. (3) **Promote LangSmith to a hard production dependency** — the env-var hook exists in v1 (set `LANGSMITH_API_KEY` to enable); v2 adds dashboards, alerting on routing-accuracy drift, and team-shared traces. Add **Sentry** for error tracking and alerting. (4) **CI eval gate** (GitHub Actions) so routing-accuracy regressions block merges. (5) **PII redaction** at the client boundary before any data hits LLM providers. (6) **Authentication** via Auth0 or Supabase Auth with row-level security on `conversations` and `messages`. (7) **Per-tenant rate limiting** for institutions serving partner schools. (8) **Replace Fly free tier** with a paid org, autoscaling rules tied to request volume, stage environment plus canary deploys. (9) **Durability upgrade**: Litestream (if staying on SQLite for any service) or managed-Postgres backups, point-in-time recovery, multi-region replicas. Total path-to-production effort: estimated 2–3 weeks for one engineer, mostly security hardening and observability — the orchestration architecture itself is production-shaped already.
 
 ---
 
 ## 11. Repo structure
 
-Two services in one repo (monorepo-light). One `docker-compose up` runs everything.
+Two services in one repo (monorepo-light).
 
 ```
 meridian/
-├── README.md                  # run instructions, architecture, stubbed-vs-real, productionization, AI-vs-me
-├── memo.pdf                   # the 2-page strategy memo
-├── docker-compose.yml         # runs api + web together
-├── .env.example               # OPENAI_API_KEY, MODEL_PLANNER, MODEL_SYNTHESIZER, DB_URL, API_URL
+├── README.md                  # operator-facing: run, architecture, productionization, AI disclosure
 ├── docs/
-│   └── architecture.png       # the diagram from section 4.2
+│   └── rfc.md                 # this document
 │
-├── api/                       # FastAPI + LangGraph + evals
+├── server/                    # FastAPI + LangGraph + evals
 │   ├── pyproject.toml         # uv-managed
 │   ├── Dockerfile
+│   ├── alembic/               # migrations
 │   ├── app/
-│   │   ├── main.py            # FastAPI entry, /chat endpoint, /health, /learner/{id}
+│   │   ├── main.py            # FastAPI entry: /chat, /health, /learner/{id}, /conversations
+│   │   ├── config.py          # pydantic-settings
+│   │   ├── api/
+│   │   │   └── sse.py         # LangGraph events → SSE wire protocol
 │   │   ├── orchestrator/
-│   │   │   ├── graph.py       # LangGraph state machine
-│   │   │   ├── state.py       # OrchestratorState TypedDict
+│   │   │   ├── graph.py       # LangGraph state machine + routing
+│   │   │   ├── state.py       # OrchestratorState TypedDict + reducers
 │   │   │   ├── nodes/
 │   │   │   │   ├── load_context.py
 │   │   │   │   ├── plan.py
@@ -750,59 +780,44 @@ meridian/
 │   │   │       ├── discovery.py
 │   │   │       └── career.py
 │   │   ├── clients/
-│   │   │   ├── __init__.py
-│   │   │   ├── crm/
-│   │   │   │   ├── base.py    # CRMClient interface
-│   │   │   │   └── stub.py    # StubCRM with fake learner records
-│   │   │   └── llm.py         # LLM factory, config-driven model selection
+│   │   │   ├── llm.py         # ChatOpenAI factory + cost estimation
+│   │   │   └── crm/
+│   │   │       ├── base.py    # CRMClient interface + provider factory
+│   │   │       ├── stub.py    # StubCRMClient with seeded learner records
+│   │   │       └── hubspot.py # HubSpotCRMClient + circuit breaker
+│   │   ├── schemas/           # Pydantic: LearnerProfile, ChatRequest, SSE events
 │   │   ├── data/
 │   │   │   ├── programs.json  # program catalog (sample data)
 │   │   │   ├── careers.json   # career outcome stub data
 │   │   │   └── learners.json  # CRM stub data
 │   │   ├── db/
 │   │   │   ├── models.py      # SQLAlchemy
-│   │   │   ├── repository.py  # ConversationRepo, EvalRepo
+│   │   │   ├── repository.py  # ConversationRepo, MessageRepo, EvalRepo
 │   │   │   └── session.py
 │   │   └── observability/
-│   │       └── tracing.py     # structured logs setup
+│   │       └── tracing.py     # structlog + optional LangSmith via env var
 │   ├── evals/
 │   │   ├── golden_dataset.jsonl
 │   │   ├── run_evals.py
 │   │   └── results/           # gitkeep, populated at runtime
 │   └── tests/
-│       ├── test_orchestrator.py
-│       ├── test_clients.py
-│       └── test_routing.py
+│       ├── test_stub_crm.py
+│       ├── test_hubspot_circuit_breaker.py
+│       ├── test_routing.py
+│       └── test_schemas.py
 │
-└── web/                       # Next.js 15 chat UI
+└── client/                    # Next.js 16 chat UI
     ├── package.json
-    ├── Dockerfile
     ├── tsconfig.json
-    ├── tailwind.config.ts
     ├── components.json        # shadcn config
-    ├── app/
-    │   ├── layout.tsx
-    │   ├── page.tsx           # the chat page
-    │   ├── globals.css
-    │   └── api/
-    │       └── chat/route.ts  # proxies POST /chat to FastAPI
-    ├── components/
-    │   ├── chat/
-    │   │   ├── chat-shell.tsx
-    │   │   ├── message-list.tsx
-    │   │   ├── message-bubble.tsx
-    │   │   ├── composer.tsx
-    │   │   ├── agent-trace.tsx
-    │   │   └── cost-badge.tsx
-    │   ├── learner/
-    │   │   └── learner-context-card.tsx
-    │   └── ui/                # shadcn primitives
-    └── lib/
-        ├── api.ts             # typed client for the FastAPI proxy
-        └── types.ts           # TS types mirroring the FastAPI response shapes
+    ├── playwright.config.ts
+    ├── app/                   # See §5.3 component inventory
+    ├── components/            # chat/, conversations/, learner/, ui/
+    ├── lib/                   # api.ts, stream.ts, trace-store.ts, sidebar-store.ts, types.ts
+    └── tests/e2e/             # Playwright happy-path suite
 ```
 
-Why this structure: a senior engineer can navigate it in 30 seconds. The `api/` vs `web/` split is the same boundary you'd cut at production scale (two deployable services). The boundary between `orchestrator/` and `clients/` inside `api/` is the same boundary that lets the prototype scale.
+Why this structure: a senior engineer can navigate it in 30 seconds. The `server/` vs `client/` split is the same boundary that would be cut at production scale (two deployable services). The boundary between `orchestrator/` and `clients/` inside `server/app/` is the same boundary that lets the prototype scale.
 
 ---
 
@@ -813,11 +828,11 @@ No hour budgets. With Claude Code agents driving scaffolding and SKILL.md-shaped
 **The two non-negotiable rules:**
 
 1. **Each phase must hit its exit criterion before the next phase starts.** Debugging two layers at once is how time disappears.
-2. **The cut order (§12.6) is rehearsed, not improvised.** If anything slips, I drop from the bottom, not from whatever feels hardest.
+2. **The cut order (§12.6) is rehearsed, not improvised.** If anything slips, drop from the bottom, not from whatever feels hardest.
 
 ### 12.1 Phase 1 — HubSpot foundation
 
-Setting up real HubSpot is the only piece that _can't_ be parallelized with anything else. Do it first so we discover any account/setup friction immediately, not on day three.
+Setting up real HubSpot is the only piece that _can't_ be parallelized with anything else. Do it first so any account/setup friction surfaces immediately, not on day three.
 
 **Tasks:** Create HubSpot dev portal → create 4 custom Contact properties (`meridian_enrolment_status`, `meridian_program`, `meridian_interests`, `meridian_career_goals`) → seed 5 test contacts across all lifecycle stages → generate private app token with `crm.objects.contacts.read` scope.
 
@@ -825,35 +840,35 @@ Setting up real HubSpot is the only piece that _can't_ be parallelized with anyt
 
 ### 12.2 Phase 2 — Backend core
 
-**Tasks:** Repo scaffold (`api/` + `web/`). Python deps via `uv`. `CRMClient` interface, both `StubCRMClient` and `HubSpotCRMClient` implementations. Resilience patterns on the HubSpot client (timeout, retry, circuit breaker). SQLAlchemy models + Alembic migration. LangGraph state machine wired with `print` statements first, _then_ real LLM calls. Structured Pydantic outputs from the planner. `/chat` (streaming SSE per §4.7), `/health`, `/learner/{id}` endpoints. Persistence + cost/latency observability. SSE event emitter wired via `astream_events(version="v2")`.
+**Tasks:** Repo scaffold (`server/` + `client/`). Python deps via `uv`. `CRMClient` interface, both `StubCRMClient` and `HubSpotCRMClient` implementations. Resilience patterns on the HubSpot client (timeout, retry, circuit breaker). SQLAlchemy models + Alembic migration. LangGraph state machine wired with `print` statements first, _then_ real LLM calls. Structured Pydantic outputs from the planner. `/chat` (streaming SSE per §4.7), `/health`, `/learner/{id}` endpoints. Persistence + cost/latency observability. SSE event emitter wired via `astream_events(version="v2")`.
 
 **Exit criterion:** `curl POST /chat` with the compound learner question, against real HubSpot, returns an SSE stream containing `status` events for each node, `delta` events streaming synthesis tokens, and a `final` event with metadata. Both `CRM_PROVIDER=stub` and `CRM_PROVIDER=hubspot` paths verified working. Test with `curl -N` and visually inspect the event sequence. If this isn't done, **no frontend work begins** — the FE on a broken backend just hides the problem.
 
 ### 12.3 Phase 3 — Evals
 
-**Tasks:** 15 hand-written cases in `golden_dataset.jsonl` (5 discovery-only, 5 career-only, 5 compound, including 2 edge cases). `run_evals.py` script. LLM-as-judge prompt for response quality (1–5 rubric). Routing accuracy calculation. Results written to DB + markdown summary file.
+**Tasks:** 15 hand-written cases in `golden_dataset.jsonl` (5 discovery-only, 5 career-only, 3 compound, 2 edge — off-topic and ambiguous). `run_evals.py` script. LLM-as-judge prompt for response quality (1–5 rubric). Routing accuracy calculation. Results written to DB + markdown summary file.
 
-**Exit criterion:** `python -m evals.run_evals` runs against the stub CRM, completes in under 3 minutes, prints routing accuracy % and mean quality score, writes a results table to `evals/results/`.
+**Exit criterion:** `python -m evals.run_evals` runs against the stub CRM, completes in under 3 minutes, prints routing accuracy % and mean quality score, writes a results table to `server/evals/results/`. CLI exit code is non-zero when `--min-routing-accuracy` threshold isn't met.
 
-Why before the FE: evals against the stub need a working backend, not a working UI. Running this checkpoint also forces me to test the orchestrator in a way I can't talk myself out of.
+Why before the FE: evals against the stub need a working backend, not a working UI. Running this checkpoint also forces a test of the orchestrator in a way it can't be talked around.
 
 ### 12.4 Phase 4 — Frontend
 
-**Tasks:** `create-next-app` in `web/`, Tailwind v4, shadcn init (`button`, `card`, `badge`, `collapsible`, `scroll-area`, `input`, `skeleton`). `lib/stream.ts` SSE parser. `lib/trace-store.ts` Zustand store. Chat shell with `useChat` consuming the `delta` event stream, with a side-channel handler routing `status`/`final` events to the trace store. `/api/chat` route handler proxying SSE through to FastAPI. Message list, bubble, composer. **The three score-earning elements:** `agent-trace.tsx` with `trace-step.tsx` rows (live-animating pending → running → done), `learner-context-card.tsx` (top-of-page CRM card with skeleton loader), and stage-aware typing indicator on the assistant bubble. Cost badge on completed messages. Empty/loading/error states.
+**Tasks:** `create-next-app` in `client/`, Tailwind v4, shadcn init (`button`, `card`, `badge`, `collapsible`, `scroll-area`, `input`, `skeleton`). `lib/stream.ts` SSE parser. `lib/trace-store.ts` Zustand store. Chat shell consuming the `delta` event stream with a side-channel handler routing `status`/`final` events to the trace store. `/api/chat` route handler proxying SSE through to FastAPI. Conversation history sidebar (per-learner, with rename + delete + mobile drawer). Message list, bubble, composer. **The three score-earning elements:** `agent-trace.tsx` with `trace-step.tsx` rows (live-animating pending → running → done), `learner-context-card.tsx` (top-of-page CRM card with skeleton loader), and stage-aware typing indicator on the assistant bubble. Cost badge on completed messages. Error + 404 boundaries. Empty/loading/error states.
 
-**Exit criterion:** localhost full stack works end-to-end. Open the page → learner card loads from HubSpot → type the compound question → trace steps animate in live (Discovery + Career appear side-by-side, ticking through pending → running → done) → tokens stream into the assistant bubble → trace finalizes with latency and cost when `final` event arrives.
+**Exit criterion:** localhost full stack works end-to-end. Open the page → learner card loads from HubSpot → type the compound question → trace steps animate in live (Discovery + Career appear side-by-side, ticking through pending → running → done) → tokens stream into the assistant bubble → trace finalizes with latency and cost when `final` event arrives → conversation appears in sidebar → reload → trace re-hydrates from persisted DB data.
 
 ### 12.5 Phase 5 — Deploy + docs + memo
 
 Three sub-phases in this order:
 
-**5a. Deploy.** Fly.io: `fly launch` for `api/`, create Fly Volume (1GB at `/data`), mount it to the API container, configure secrets (OpenAI key, HubSpot token, `DB_URL=sqlite:////data/meridian.db`), deploy in Frankfurt region. Run Alembic migrations against the deployed SQLite (one-shot SSH into the container). Vercel: deploy `web/`, set `API_URL` to Fly.io URL.
+**5a. Deploy.** Fly.io: `fly launch` for `server/`, create Fly Volume (1GB at `/data`), mount it to the API container, configure secrets (OpenAI key, HubSpot token, `DB_URL=sqlite:////data/meridian.db`), deploy in Frankfurt region. Run Alembic migrations against the deployed SQLite (one-shot SSH into the container). Vercel: deploy `client/`, set `API_URL` to Fly.io URL.
 
 > **Exit criterion 5a:** the deployed Vercel URL serves a real conversation that hits the deployed Fly.io API, which calls real HubSpot and persists to the mounted SQLite volume. Smoke-test the full flow with three different learner profiles. Verify volume persistence by redeploying — conversations from before the redeploy must still be queryable.
 
-**5b. README.** Live URLs at the top. Run instructions for both local and deployed. Architecture section with the diagram. Stubbed-vs-real boundary (almost everything is real — only auth is not). The productionization paragraph (§10). The AI-assisted development note (§13). The "what was cut" list.
+**5b. README.** Live URLs at the top. Run instructions for both local and deployed. Architecture section with a Mermaid diagram. Stubbed-vs-real boundary (almost everything is real — only auth is not). The productionization paragraph (§10). The AI-assisted development note (§13). The "what was cut" list.
 
-> **Exit criterion 5b:** a senior engineer who has never seen the repo can clone, run locally, hit the deployed URL, and understand the architecture inside 10 minutes.
+> **Exit criterion 5b:** a senior engineer who has never seen the repo can clone, run locally (and, post-Phase 5a, hit the deployed URL), and understand the architecture inside 10 minutes.
 
 **5c. Memo.** Written last, with the actually-built product as evidence rather than aspirations. Strict 2 pages.
 
@@ -867,13 +882,14 @@ If time runs tight, cuts happen in this exact order — not panicked freelance d
 2. **FE micro-polish** — hover states, focus rings, micro-transitions, empty-state copy. The visual baseline (dark theme, mobile-responsive layout, semantic tokens) stays; only the last 10% niceties get cut.
 3. **Mobile responsiveness past 640px breakpoint** — keep mobile + desktop, drop tablet-specific tuning.
 4. **Cost badge component** — trace panel and learner card stay; those carry the architecture signal.
-5. **Live-animating trace steps** — degrade trace panel to "fills in after stream completes" instead of live-updating. The `final` event still drives it. Saves the Zustand wiring complexity. Demo loses some sizzle but architecture is intact.
-6. **Streaming entirely** — backend returns a single JSON response, FE shows a typing indicator. Slowest cut to make because backend code already exists; only revert if Phase 4 is collapsing.
-7. **Eval cases: 15 → 10** — still covers all three routing categories.
-8. **Deploy entirely** — submit localhost-only with README documenting deployment-ready architecture; live URL added after submission as v1.1.
-9. **Agent trace panel** — demo through Swagger or basic chat shell only.
+5. **Conversation history sidebar** — falls back to single-conversation-per-session UX. DB schema and endpoints stay.
+6. **Live-animating trace steps** — degrade trace panel to "fills in after stream completes" instead of live-updating. The `final` event still drives it. Saves the Zustand wiring complexity. Demo loses some sizzle but architecture is intact.
+7. **Streaming entirely** — backend returns a single JSON response, FE shows a typing indicator. Slowest cut to make because backend code already exists; only revert if Phase 4 is collapsing.
+8. **Eval cases: 15 → 10** — still covers all three routing categories.
+9. **Deploy entirely** — submit localhost-only with README documenting deployment-ready architecture; live URL added after submission as v1.1.
+10. **Agent trace panel** — demo through Swagger or basic chat shell only.
 
-If cut 8 lands — deployment dropped — the framing changes from "a live product" to "a prototype with a documented deployment plan." Still defensible, less powerful.
+If cut 9 lands — deployment dropped — the framing changes from "a live product" to "a prototype with a documented deployment plan." Still defensible, less powerful.
 
 ### 12.7 Time discipline guardrails
 
@@ -887,9 +903,13 @@ No hour budgets, but not unbounded either:
 
 ## 13. AI-assisted development note
 
-> Meridian was built with Claude Code agents and project-specific `SKILL.md` files driving scaffolding, boilerplate, and repetitive plumbing — the same way a strong junior engineer handles setup while a senior drives design. Every architectural decision is owned by the human author: orchestrator graph topology, routing logic, planner prompt structure, agent prompts, eval rubric, HubSpot field mapping, resilience patterns, cut order under time pressure, the trace-panel architecture. The agent generated SQLAlchemy models, FastAPI boilerplate, shadcn component wiring, and significant parts of the React UI — all reviewed, edited, and tested before commit. The frontend moved fast because Next.js + Tailwind + shadcn is the author's daily stack — that's experience, not assistance. The orchestrator routing logic and LangGraph state machine were built without autocomplete to maintain unassisted Python fluency.
+The canonical version of this note lives in the repo's [`README.md`](../README.md) under the "AI assistance disclosure" heading. The short version, repeated here so the design doc and the operator doc tell the same story:
 
-This note belongs in the README. It is included here so the design doc and the operator doc tell the same story.
+> The architecture and design decisions in this RFC — scenario choice, orchestrator shape, model split, CRM resilience pattern, scope cuts, productionization plan, success metrics — are mine. The implementation was paired with Claude Code (Opus 4.7) as a fast-fingers collaborator: I drove the design and judgment calls; Claude drafted code from my specs, ran the toolchain, and surfaced issues I then resolved.
+
+Hand-authored: this RFC, all architecture decisions, the eval rubric, the SSE event protocol, the CRM circuit-breaker contract, the model-per-role split, scope cuts. AI-drafted then reviewed: LangGraph wiring, FastAPI route handlers, SQLAlchemy models + repos, Alembic migrations, Pydantic schemas, the conversation history sidebar (React + Zustand), the chat shell SSE consumer, the agent-trace panel, the eval harness, pytest + Playwright happy-path tests.
+
+Most production engineering today is a collaboration like this. The point of disclosing it is so the reviewer can see exactly where my judgment ended and the assistant's drafting began.
 
 ---
 
@@ -897,10 +917,9 @@ This note belongs in the README. It is included here so the design doc and the o
 
 Decisions deliberately deferred:
 
-- **Conversation memory beyond a single session**: would need a learner-profile-builder agent that summarizes long-term context. v2.
+- **Conversation memory beyond a single session**: messages persist per-conversation today, but cross-conversation memory (a learner-profile-builder agent that summarizes long-term context) is v2.
 - **Self-correction loops**: orchestrator could re-route if synthesis quality is low. Interesting but adds latency and complexity; v2 if metrics show it's needed.
 - **More agents**: the brief implies a Career Advisor and a Discovery agent. In production there are obviously more (Financial Aid, Technical Support, Alumni Network). The architecture supports adding them by writing a new node and one routing rule — a single-PR change, not an architecture change.
-- **Per-learner long-term memory**: tied into the memory question above; would let agents reference past conversations and prior advice. v2.
 - **A/B testing of synthesis prompts**: traffic-splitting at the synthesis node with metric capture per variant. v2 once there's enough traffic to learn from.
 
 ---
@@ -911,21 +930,21 @@ A pre-built run-of-show for presenting Meridian to stakeholders — useful for t
 
 > _"The brief asked for a prototype. Meridian is a product."_
 
-> _"Everything visible is real — real HubSpot CRM, real persistent storage, real deployed URLs. The only stub is the program catalog, since a real institution's catalog isn't public sample data."_
+> _"Everything visible is real — real HubSpot CRM, real persistent storage. The only stub is the program catalog, since a real institution's catalog isn't public sample data. If the deploy step landed before this walkthrough, the deployed URLs are real too — otherwise the walkthrough runs on localhost against the same code."_
 
-**The walkthrough runs from localhost** for predictable performance and debugger access. **The deployed URL is in the README** as proof of production-readiness, not as the walkthrough runtime.
+**The walkthrough runs from localhost** for predictable performance and debugger access. **The deployed URL — once Phase 5a lands — sits at the top of the README** as proof of production-readiness, not as the walkthrough runtime.
 
 ### Run of show
 
 1. **Minute 0–2 — The problem.** The disconnected-agents problem in its own words. The compound query. Why a router alone fails. The chat page opens with the learner context card already populated from HubSpot — instant visible signal that the CRM is integrated.
-2. **Minute 2–5 — The architecture.** Show the diagram from §4.2. Why LangGraph (state machines for orchestration with deterministic routing). Why an orchestrator with routing layer, not a pure router and not a swarm. What's stubbed (only the program catalog) and what's real (everything else).
+2. **Minute 2–5 — The architecture.** Show the diagram (Mermaid in the README, or §4.2 in this RFC). Why LangGraph (state machines for orchestration with deterministic routing). Why an orchestrator with routing layer, not a pure router and not a swarm. What's stubbed (only the program catalog) and what's real (everything else).
 3. **Minute 5–10 — Live demo through the UI:**
    - **Single-intent query** ("which program is right for me?") → trace panel animates live (Plan → Discovery only) → tokens stream into the response → trace finalizes with latency.
    - **Compound query** (the brief's canonical example) → trace panel shows **Discovery and Career rendering side-by-side, both ticking through pending → running → done in parallel** → synthesis tokens stream → final metadata. This is the architectural payoff. Pause on it.
    - Point at the cost badge — production thinking made visible.
-   - Switch to a terminal: `cd api && python -m evals.run_evals` → show routing accuracy + quality table.
-4. **Minute 10–13 — Productionization story.** Open `api/app/clients/crm/base.py` → show the `CRMClient` interface. Show `hubspot.py` next to it → emphasize that `CRM_PROVIDER` swaps them at runtime. Open `fly.toml` → confirm the deployed reality. Walk through §10's productionization paragraph: what's already real, what's missing for institution-grade production.
-5. **Minute 13–15 — Risks, cuts, extensions.** Top 3 risks from §8. What was deliberately deprioritized (auth, Redis, light-mode toggle, conversation history sidebar) and why. What two more weeks would add.
+   - Switch to a terminal: `cd server && uv run python -m evals.run_evals` → show routing accuracy + quality table.
+4. **Minute 10–13 — Productionization story.** Open `server/app/clients/crm/base.py` → show the `CRMClient` interface. Show `hubspot.py` next to it → emphasize that `CRM_PROVIDER` swaps them at runtime. Open `server/Dockerfile` (and `fly.toml` if Phase 5a has landed) → walk through the deploy path: Fly machine, mounted Volume at `/data`, secrets configured, single-command redeploy. Walk through §10's productionization paragraph: what's already real, what's missing for institution-grade production.
+5. **Minute 13–15 — Risks, cuts, extensions.** Top 3 risks from §8. What was deliberately deprioritized (auth, Redis, light-mode toggle, custom domain) and why. What two more weeks would add.
 
 ### Anticipated extensions
 
@@ -933,7 +952,7 @@ The cheapest live extension is adding a third agent (e.g., Financial Aid). ~10 m
 
 ### Failure plan
 
-- **If localhost fails:** switch to the deployed URL. Both stacks share the same UI and event protocol.
+- **If localhost fails:** if Phase 5a has landed, switch to the deployed URL — both stacks share the same UI and event protocol. Otherwise, restart the local server (the Playwright suite passes in <30s as a smoke test).
 - **If both fail:** narrate the architecture from the diagram, walk through the code, follow up with a working flow over email. Don't burn time debugging in front of an audience.
 
 ---

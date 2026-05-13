@@ -4,11 +4,9 @@ orchestrator gets a degraded profile. Verified without touching the network.
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
-from app.clients.crm.hubspot import HubSpotCRMClient, _CB_FAILURE_THRESHOLD
+from app.clients.crm.hubspot import _CB_FAILURE_THRESHOLD, HubSpotCRMClient
 
 
 class _BoomClient:
@@ -19,7 +17,7 @@ class _BoomClient:
         self.contacts = self
         self.basic_api = self
 
-    def get_by_id(self, *args, **kwargs):  # noqa: D401 — sdk-shaped
+    def get_by_id(self, *args, **kwargs):
         raise ConnectionError("boom")
 
     def get_page(self, *args, **kwargs):
