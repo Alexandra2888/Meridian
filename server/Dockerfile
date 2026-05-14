@@ -21,6 +21,7 @@ COPY alembic.ini ./
 RUN mkdir -p /data
 ENV DB_URL=sqlite+aiosqlite:////data/meridian.db
 
-EXPOSE 8000
+ENV PORT=8080
+EXPOSE 8080
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
