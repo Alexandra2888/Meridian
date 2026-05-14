@@ -133,7 +133,7 @@ export default async function Page({
           }
         />
         <ChatShell
-          key={activeConversationId ?? "new"}
+          key={`${learnerId}:${activeConversationId ?? "new"}`}
           learnerId={learnerId}
           initialConversationId={activeConversationId}
           initialMessages={initialMessages}
