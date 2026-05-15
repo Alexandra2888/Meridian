@@ -2,12 +2,12 @@
 
 > **Meridian**: the line along which disconnected things align. The orchestration layer that pulls independent learner-facing agents onto a single path, so one learner question gets one coherent answer.
 
-|              |                                         |
-| ------------ | --------------------------------------- |
-| **Status**   | v1 — implementation spec                |
-| **Author**   | Alexandra Manole                        |
-| **Live URL** | _populated after deploy — see README_   |
-| **Repo**     | _populated on publication — see README_ |
+|              |                                                                                |
+| ------------ | ------------------------------------------------------------------------------ |
+| **Status**   | v1 — implemented and deployed                                                  |
+| **Author**   | Alexandra Moldovan                                                             |
+| **Live app** | [https://meridian-one-mu.vercel.app](https://meridian-one-mu.vercel.app)       |
+| **Live API** | [https://meridian-g-q4wg.fly.dev](https://meridian-g-q4wg.fly.dev) (`/health`) |
 
 ---
 
@@ -19,24 +19,22 @@ The repo's `README.md` is the operator-facing document (how to run, what's deplo
 
 ### 0.1 On scope: product, not prototype
 
-Meridian originated as a response to a take-home design brief that asked for a 6-hour orchestration prototype. It is built as a **deployment-ready product** — Dockerised API, Vercel-ready frontend, Fly Volume mount path defined, real CRM integration end-to-end. The deploy itself happens in §12.5a (Phase 5a) before submission; the README's "Live URL" line is populated when it lands.
-
-The framing:
+Meridian originated as a response to a take-home design brief that asked for a 6-hour orchestration prototype. It is built as a **live, deployed product** instead — running at the URLs at the top of this document, against real HubSpot, with persistent storage on a Fly Volume. The framing:
 
 > **The brief asked for a prototype. Meridian is a product.**
 
-**Why a product (not a prototype):**
+**Why a live product:**
 
-- The stated problem — disconnected learner-facing agents — is a _learner-facing_ problem. The architecture is shaped for a real URL a learner could visit, with auth as the only deliberate gap between the v1 surface and a real production surface.
+- The stated problem — disconnected learner-facing agents — is a _learner-facing_ problem. Solving it visibly, on a URL a learner can actually visit, makes the demonstration of value tangible.
 - Real HubSpot integration tests the integration-brittleness risk against actual API quirks, rate limits, and network conditions. A stub cannot.
 - Streaming UX with live orchestration events (§4.7) exposes the architecture as it runs — the orchestrator's parallel execution is visible in the UI, not just claimed in the README.
-- Deployment is wired end-to-end (Fly.io for the API with a Volume-mounted SQLite, Vercel for the FE), so the deploy step is a procedure, not a re-architecture.
+- Live deployment forces the architecture to survive its first real environment, which is where most prototypes break.
 
 **Why this isn't scope drift:**
 
-- The brief is delivered exactly: orchestration between agents + one external system + a coherent response. The external system is real; the response shape is the same whether served from localhost or Fly.
+- The brief is delivered exactly: orchestration between agents + one external system + a coherent response. The external system is real; the response is reachable from a real URL.
 - Cuts are still extensive (see §2 non-goals): no auth, no Redis, no PII redaction, no light-mode toggle, no admin UI, no custom domain, no staging environment, no monitoring/alerting beyond defaults. Every one of those would be in a production-grade product. Scoping discipline lives in _which_ additions made the cut and _which_ were refused.
-- No auth is the single biggest scope cut. It removes ~80% of deployment complexity (login flows, sessions, JWT, password resets, OAuth, RBAC) — which is what makes the "real product" path tractable inside the time budget.
+- No auth is the single biggest scope cut. It removes ~80% of deployment complexity (login flows, sessions, JWT, password resets, OAuth, RBAC) — which is what makes the "live product" path tractable inside the time budget.
 
 **The accepted trade:** going past the brief's hour suggestion is a deliberate choice. The cuts are visible, the rationale is explicit, and the architectural decisions are owned end-to-end in this document.
 
@@ -49,7 +47,7 @@ Online universities and EdTech platforms commonly run multiple learner-facing AI
 Meridian is the orchestration layer that fixes this pattern. The design brief that motivated this v1:
 
 1. Route a single learner query across ≥2 agents and ≥1 external system.
-2. Look up learner enrolment status from a CRM (HubSpot or a stub — Meridian uses the real HubSpot API).
+2. Look up learner enrolment status from a CRM (HubSpot or a stub — Meridian uses the real HubSpot API in production).
 3. Return **one coherent response**, not three disconnected ones.
 4. Design for ~10k learners with a clear path to production.
 
@@ -68,7 +66,7 @@ Meridian is the orchestration layer that fixes this pattern. The design brief th
 - ✅ Single orchestrator that classifies intent and routes to specialist agents
 - ✅ Two specialist agents: Discovery (program recommendation) + Career (job outcomes)
 - ✅ One external system: **live HubSpot CRM integration** (real API, real test contacts) with a stub available as fallback for offline development and evals
-- ✅ **Deployment-ready**: Dockerised API (Fly.io target with SQLite on a Fly Volume), Vercel-ready frontend, secrets management via Fly + Vercel env vars. The deploy procedure is documented in §9 and executed in Phase 5a (§12.5a).
+- ✅ **Deployed live**: API on Fly.io (Frankfurt, with SQLite on a 1 GB Fly Volume), frontend on Vercel — both URLs at the top of this document
 - ✅ Coherent synthesis: when both agents are needed, output reads as one voice, not concatenated
 - ✅ Conversation state across turns (so follow-ups work)
 - ✅ Per-learner conversation history with a sidebar — rename, delete, switch between conversations
@@ -204,12 +202,14 @@ Four shapes considered:
 │        └────────┬────────┘     + trace store                 │
 │                 ▼                                            │
 │              Response                                        │
+│                                                              │
+│   (async, off-wire: title generator names the conversation)  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### 4.3 State machine (LangGraph)
 
-States:
+Six registered nodes in `server/app/orchestrator/graph.py`:
 
 - `load_context` → pulls learner record from CRM (HubSpot or stub)
 - `plan` → LLM call: classifies intent into `{discovery, career, both, neither}`; outputs structured plan
@@ -217,7 +217,8 @@ States:
 - `career_agent` → conditional, runs if plan includes career
 - `synthesize` → unifies outputs into one coherent response (or echoes single-agent output if only one ran)
 - `persist` → write conversation message + trace metadata to SQLite
-- `title` → async post-response: when a conversation has no title yet, an LLM call generates a short label from the first user message + assistant reply. Runs off the SSE wire — the learner has already received the full response by the time `title` executes, so it never blocks streaming latency.
+
+Plus an **async title task** that fires after the response is delivered: when a conversation has no title yet, an LLM call generates a short label from the first user message + assistant reply. Runs off the SSE wire — the learner has already received the full response by the time it executes, so it never blocks streaming latency. Implemented as a background task rather than a graph node specifically because it isn't on the orchestration critical path.
 
 Routing edges from `plan` are conditional on the plan output. Discovery and Career run **in parallel** when both are needed (LangGraph supports this natively via `Send` API). This matters for latency at scale.
 
@@ -263,7 +264,7 @@ class CRMClient(Protocol):
 
 Two implementations, swappable via `CRM_PROVIDER` env var:
 
-- **`HubSpotCRMClient`** — the production path. Uses the official `hubspot-api-client` Python SDK against a HubSpot developer account dedicated to this project.
+- **`HubSpotCRMClient`** — the production path, used by the deployed app. Uses the official `hubspot-api-client` Python SDK against a HubSpot developer account dedicated to this project.
 - **`StubCRMClient`** — used for: (a) eval runs, (b) offline development, (c) demo fallback if HubSpot has an incident on demo day. Same interface, fake data.
 
 `LearnerProfile` is a Pydantic model — the canonical shape the orchestrator consumes:
@@ -538,7 +539,7 @@ This is a one-pass styling brief, not a design system. The point is to make the 
 Meridian uses SQLite locally **and** in deployment. The architectural choice is defended in §9.3; this section covers the implementation.
 
 - **Local development:** SQLite file at `./server/data/meridian.db`. Zero setup; a fresh clone runs with no database installation required.
-- **Deployed:** SQLite file at `/data/meridian.db` on a Fly Volume mounted into the API container. Volume snapshots provide v1-grade backup.
+- **Deployed:** SQLite file at `/data/meridian.db` on a 1 GB Fly Volume mounted into the API container. Volume snapshots provide v1-grade backup.
 
 SQLAlchemy 2.0 + Alembic are used regardless. The motivation isn't "we need an ORM today" — it's that the data-access layer is shaped for the Postgres migration whenever scale warrants it. The repository pattern (`ConversationRepo`, `MessageRepo`, `EvalRepo`) means swapping the connection string is a one-line change at the engine boundary; query code is engine-agnostic.
 
@@ -608,9 +609,11 @@ The brief asks: _"How would you know the system is getting better or worse?"_ Me
 - A `run_evals.py` script that:
   1. Loops every test case
   2. Calls the orchestrator (against the stub CRM for determinism)
-  3. Checks: **(a) routing correctness** (did the right agents fire?) and **(b) response quality** (LLM-as-judge with a rubric, scored 1–5)
+  3. Checks: **(a) routing correctness** (did the right agents fire?) and **(b) response quality** (LLM-as-judge with a rubric, scored 1–5, temp=0 for reproducibility)
   4. Writes results to `eval_runs` table + a markdown summary
 - CLI exit code: non-zero when routing accuracy falls below a `--min-routing-accuracy` threshold — usable as a CI gate.
+
+**Current v1 numbers (15-case golden dataset):** routing accuracy **87%**, mean response quality **4.60 / 5**. Two persistent misses, both documented in `evals/results/` with one-line v2 fixes: one labelling ambiguity on program-comparison queries, one conservative routing on bare job-title prompts.
 
 ### 7.2 What production would add
 
@@ -676,17 +679,17 @@ The brief's risk categories are: cost, latency, hallucination, privacy, integrat
 
 ## 9. Deployment
 
-The product is designed to ship at a live URL. Local development is the canonical path for engineering work (predictable, low-latency, debugger-attached); the deployed environment becomes the operational reference once Phase 5a (§12.5a) lands.
+The product ships at a live URL ([https://meridian-one-mu.vercel.app](https://meridian-one-mu.vercel.app)). Local development remains the canonical path for engineering work (predictable, low-latency, debugger-attached), but the deployed environment is the operational reference.
 
 ### 9.1 Stack
 
-| Tier     | Service                          | Why                                                                                                                                                         |
-| -------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Frontend | **Vercel**                       | Native Next.js host, free tier, automatic deploys on push, SSE-friendly route handlers                                                                      |
-| API      | **Fly.io**                       | Dockerfile-native, free tier covers this scale, Frankfurt region for EU learners, persistent secrets                                                        |
-| Database | **SQLite on Fly Volume**         | Same engine local and deployed → true parity. Free tier includes 3GB persistent storage. Single-instance deployment is appropriate for v1 scale (see §9.3). |
-| CRM      | **HubSpot** (developer portal)   | Free for dev portals, full API surface                                                                                                                      |
-| Secrets  | Fly.io secrets + Vercel env vars | Standard pattern; no secret manager service at this scale                                                                                                   |
+| Tier     | Service                          | Why                                                                                                                                              |
+| -------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Frontend | **Vercel**                       | Native Next.js host, free tier, automatic deploys on push, SSE-friendly route handlers                                                           |
+| API      | **Fly.io** (Frankfurt)           | Dockerfile-native, free tier covers this scale, Frankfurt region for EU learners, persistent secrets; container binds port 8080                  |
+| Database | **SQLite on Fly Volume**         | Same engine local and deployed → true parity. 1 GB volume mounted at `/data`. Single-instance deployment is appropriate for v1 scale (see §9.3). |
+| CRM      | **HubSpot** (developer portal)   | Free for dev portals, full API surface; 5 seeded test contacts across all lifecycle stages                                                       |
+| Secrets  | Fly.io secrets + Vercel env vars | Standard pattern; no secret manager service at this scale                                                                                        |
 
 ### 9.2 Deployment topology
 
@@ -699,7 +702,7 @@ The product is designed to ship at a live URL. Local development is the canonica
                      ▼
                    Fly.io  ─── HubSpot API ──► HubSpot
             ┌─────────────────┐
-            │ FastAPI (api)   │
+            │ FastAPI (api)   │  port 8080
             └────────┬────────┘
                      │
                      ▼ (mounted volume at /data)
@@ -708,7 +711,7 @@ The product is designed to ship at a live URL. Local development is the canonica
             └─────────────────┘
 ```
 
-The Next.js `/api/chat` route handler proxies to the Fly.io URL server-side — no CORS, no API URL leaked to the client, no auth complexity in v1. The SQLite file persists across deploys via a Fly Volume mounted at `/data`.
+The Next.js `/api/chat` route handler proxies to the Fly.io URL server-side — no CORS, no API URL leaked to the client, no auth complexity in v1. The SQLite file persists across deploys via the Fly Volume.
 
 ### 9.3 On choosing SQLite (and accepting its constraints)
 
@@ -734,7 +737,7 @@ SQLite is a deliberate v1 choice, not a placeholder. The constraints it imposes 
 
 ### 9.5 Operational safety
 
-1. **Local + deployed parity.** Same Docker image runs locally and on Fly.io. Same SQLite engine in both places. No engine-specific bugs that only surface in production.
+1. **Local + deployed parity.** Same Docker image runs locally and on Fly.io. Same SQLite engine in both places. No engine-specific bugs that only surface in production. (Note: local dev uses port 8000, the Fly container uses 8080 — different bind, same code.)
 2. **Stub fallback.** `CRM_PROVIDER=stub` is one env var away if HubSpot has an incident, in either environment.
 3. **Pre-demo smoke test.** A short checklist run before any external demo verifies both local and deployed paths.
 4. **Backup recording.** A short pre-recorded run of the canonical flow exists as a last-resort fallback.
@@ -743,7 +746,7 @@ SQLite is a deliberate v1 choice, not a placeholder. The constraints it imposes 
 
 ## 10. Productionization at platform scale
 
-Meridian's orchestration runs against real HubSpot end-to-end, with persistence wired and the deployment path documented and executable (Phase 5a in §12.5a). The orchestration architecture is production-shaped already. The gaps for institution-grade operations are scale, security, durability, and operational maturity, not foundational re-architecture:
+Meridian's orchestration runs against real HubSpot end-to-end on a deployed FastAPI with persistent storage. The orchestration architecture is production-shaped. The gaps for institution-grade operations are scale, security, durability, and operational maturity, not foundational re-architecture:
 
 > **From v1 to platform scale (10k learners, growing):** The orchestration layer and CRM integration are production-shaped already. The migration steps are: (1) **Migrate SQLite → Postgres** (Supabase, Neon, or self-hosted) — run existing Alembic migrations against the new DB, dump-and-restore data, change `DB_URL`; application code unchanged. This unlocks horizontal autoscaling, transactional backups, and row-level security for multi-tenancy. (2) **Add Redis** for conversation context caching, intent-classifier result caching for repeat queries, and HubSpot response caching to stay well under rate limits. (3) **Promote LangSmith to a hard production dependency** — the env-var hook exists in v1 (set `LANGSMITH_API_KEY` to enable); v2 adds dashboards, alerting on routing-accuracy drift, and team-shared traces. Add **Sentry** for error tracking and alerting. (4) **CI eval gate** (GitHub Actions) so routing-accuracy regressions block merges. (5) **PII redaction** at the client boundary before any data hits LLM providers. (6) **Authentication** via Auth0 or Supabase Auth with row-level security on `conversations` and `messages`. (7) **Per-tenant rate limiting** for institutions serving partner schools. (8) **Replace Fly free tier** with a paid org, autoscaling rules tied to request volume, stage environment plus canary deploys. (9) **Durability upgrade**: Litestream (if staying on SQLite for any service) or managed-Postgres backups, point-in-time recovery, multi-region replicas. Total path-to-production effort: estimated 2–3 weeks for one engineer, mostly security hardening and observability — the orchestration architecture itself is production-shaped already.
 
@@ -761,10 +764,11 @@ meridian/
 │
 ├── server/                    # FastAPI + LangGraph + evals
 │   ├── pyproject.toml         # uv-managed
-│   ├── Dockerfile
+│   ├── Dockerfile             # binds port 8080 (Fly target)
+│   ├── fly.toml               # Fly.io deployment config
 │   ├── alembic/               # migrations
 │   ├── app/
-│   │   ├── main.py            # FastAPI entry: /chat, /health, /learner/{id}, /conversations
+│   │   ├── main.py            # FastAPI entry: /chat, /health, /learner/{id}, /learners, /conversations
 │   │   ├── config.py          # pydantic-settings
 │   │   ├── api/
 │   │   │   └── sse.py         # LangGraph events → SSE wire protocol
@@ -775,7 +779,8 @@ meridian/
 │   │   │   │   ├── load_context.py
 │   │   │   │   ├── plan.py
 │   │   │   │   ├── synthesize.py
-│   │   │   │   └── persist.py
+│   │   │   │   ├── persist.py
+│   │   │   │   └── title.py   # async post-response title generation (not on graph)
 │   │   │   └── agents/
 │   │   │       ├── discovery.py
 │   │   │       └── career.py
@@ -804,13 +809,17 @@ meridian/
 │       ├── test_stub_crm.py
 │       ├── test_hubspot_circuit_breaker.py
 │       ├── test_routing.py
-│       └── test_schemas.py
+│       ├── test_schemas.py
+│       ├── test_conversation_repo.py
+│       ├── test_conversations_api.py
+│       └── test_title_generation.py
 │
 └── client/                    # Next.js 16 chat UI
     ├── package.json
     ├── tsconfig.json
     ├── components.json        # shadcn config
     ├── playwright.config.ts
+    ├── .env.example
     ├── app/                   # See §5.3 component inventory
     ├── components/            # chat/, conversations/, learner/, ui/
     ├── lib/                   # api.ts, stream.ts, trace-store.ts, sidebar-store.ts, types.ts
@@ -846,7 +855,7 @@ Setting up real HubSpot is the only piece that _can't_ be parallelized with anyt
 
 ### 12.3 Phase 3 — Evals
 
-**Tasks:** 15 hand-written cases in `golden_dataset.jsonl` (5 discovery-only, 5 career-only, 3 compound, 2 edge — off-topic and ambiguous). `run_evals.py` script. LLM-as-judge prompt for response quality (1–5 rubric). Routing accuracy calculation. Results written to DB + markdown summary file.
+**Tasks:** 15 hand-written cases in `golden_dataset.jsonl` (5 discovery-only, 5 career-only, 3 compound, 2 edge — off-topic and ambiguous). `run_evals.py` script. LLM-as-judge prompt for response quality (1–5 rubric, judge at temp=0 for reproducibility). Routing accuracy calculation. Results written to DB + markdown summary file.
 
 **Exit criterion:** `python -m evals.run_evals` runs against the stub CRM, completes in under 3 minutes, prints routing accuracy % and mean quality score, writes a results table to `server/evals/results/`. CLI exit code is non-zero when `--min-routing-accuracy` threshold isn't met.
 
@@ -862,13 +871,13 @@ Why before the FE: evals against the stub need a working backend, not a working 
 
 Three sub-phases in this order:
 
-**5a. Deploy.** Fly.io: `fly launch` for `server/`, create Fly Volume (1GB at `/data`), mount it to the API container, configure secrets (OpenAI key, HubSpot token, `DB_URL=sqlite:////data/meridian.db`), deploy in Frankfurt region. Run Alembic migrations against the deployed SQLite (one-shot SSH into the container). Vercel: deploy `client/`, set `API_URL` to Fly.io URL.
+**5a. Deploy.** Fly.io: `fly launch` for `server/`, create 1 GB Fly Volume at `/data`, mount it to the API container, configure secrets (OpenAI key, HubSpot token, `DB_URL=sqlite:////data/meridian.db`), deploy in Frankfurt region. Run Alembic migrations against the deployed SQLite. Vercel: deploy `client/`, set `API_URL` to Fly.io URL.
 
 > **Exit criterion 5a:** the deployed Vercel URL serves a real conversation that hits the deployed Fly.io API, which calls real HubSpot and persists to the mounted SQLite volume. Smoke-test the full flow with three different learner profiles. Verify volume persistence by redeploying — conversations from before the redeploy must still be queryable.
 
 **5b. README.** Live URLs at the top. Run instructions for both local and deployed. Architecture section with a Mermaid diagram. Stubbed-vs-real boundary (almost everything is real — only auth is not). The productionization paragraph (§10). The AI-assisted development note (§13). The "what was cut" list.
 
-> **Exit criterion 5b:** a senior engineer who has never seen the repo can clone, run locally (and, post-Phase 5a, hit the deployed URL), and understand the architecture inside 10 minutes.
+> **Exit criterion 5b:** a senior engineer who has never seen the repo can clone, run locally, hit the deployed URL, and understand the architecture inside 10 minutes.
 
 **5c. Memo.** Written last, with the actually-built product as evidence rather than aspirations. Strict 2 pages.
 
@@ -930,9 +939,9 @@ A pre-built run-of-show for presenting Meridian to stakeholders — useful for t
 
 > _"The brief asked for a prototype. Meridian is a product."_
 
-> _"Everything visible is real — real HubSpot CRM, real persistent storage. The only stub is the program catalog, since a real institution's catalog isn't public sample data. If the deploy step landed before this walkthrough, the deployed URLs are real too — otherwise the walkthrough runs on localhost against the same code."_
+> _"Everything visible is real — real HubSpot CRM, real persistent storage, real deployed URLs. The only stub is the program catalog, since a real institution's catalog isn't public sample data."_
 
-**The walkthrough runs from localhost** for predictable performance and debugger access. **The deployed URL — once Phase 5a lands — sits at the top of the README** as proof of production-readiness, not as the walkthrough runtime.
+**The walkthrough runs from localhost** for predictable performance and debugger access. **The deployed URL sits at the top of the README** as proof of production-readiness, not as the walkthrough runtime.
 
 ### Run of show
 
@@ -943,7 +952,7 @@ A pre-built run-of-show for presenting Meridian to stakeholders — useful for t
    - **Compound query** (the brief's canonical example) → trace panel shows **Discovery and Career rendering side-by-side, both ticking through pending → running → done in parallel** → synthesis tokens stream → final metadata. This is the architectural payoff. Pause on it.
    - Point at the cost badge — production thinking made visible.
    - Switch to a terminal: `cd server && uv run python -m evals.run_evals` → show routing accuracy + quality table.
-4. **Minute 10–13 — Productionization story.** Open `server/app/clients/crm/base.py` → show the `CRMClient` interface. Show `hubspot.py` next to it → emphasize that `CRM_PROVIDER` swaps them at runtime. Open `server/Dockerfile` (and `fly.toml` if Phase 5a has landed) → walk through the deploy path: Fly machine, mounted Volume at `/data`, secrets configured, single-command redeploy. Walk through §10's productionization paragraph: what's already real, what's missing for institution-grade production.
+4. **Minute 10–13 — Productionization story.** Open `server/app/clients/crm/base.py` → show the `CRMClient` interface. Show `hubspot.py` next to it → emphasize that `CRM_PROVIDER` swaps them at runtime. Open `server/Dockerfile` and `server/fly.toml` → walk through the deploy path: Fly machine, mounted Volume at `/data`, secrets configured, single-command redeploy. Walk through §10's productionization paragraph: what's already real, what's missing for institution-grade production.
 5. **Minute 13–15 — Risks, cuts, extensions.** Top 3 risks from §8. What was deliberately deprioritized (auth, Redis, light-mode toggle, custom domain) and why. What two more weeks would add.
 
 ### Anticipated extensions
@@ -952,7 +961,7 @@ The cheapest live extension is adding a third agent (e.g., Financial Aid). ~10 m
 
 ### Failure plan
 
-- **If localhost fails:** if Phase 5a has landed, switch to the deployed URL — both stacks share the same UI and event protocol. Otherwise, restart the local server (the Playwright suite passes in <30s as a smoke test).
+- **If localhost fails:** switch to the deployed URL. Both stacks share the same UI and event protocol.
 - **If both fail:** narrate the architecture from the diagram, walk through the code, follow up with a working flow over email. Don't burn time debugging in front of an audience.
 
 ---

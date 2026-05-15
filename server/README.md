@@ -3,22 +3,27 @@
 FastAPI + LangGraph backend for the Meridian learner orchestration layer.
 See [`docs/rfc.md`](../docs/rfc.md) for the full design rationale.
 
+**Live API:** https://meridian-g-q4wg.fly.dev · `GET /health` for status.
+
 ## Stack
 
-| Layer            | Choice                                      |
-| ---------------- | ------------------------------------------- |
-| Language         | Python 3.12                                 |
-| Web              | FastAPI + uvicorn                           |
-| Orchestration    | LangGraph (`astream_events(version="v2")`)  |
-| LLMs             | OpenAI via `langchain-openai`               |
-| CRM              | HubSpot (real) + stub fallback              |
-| ORM / migrations | SQLAlchemy 2.0 async + Alembic              |
-| Database         | SQLite (local + Fly Volume in prod)         |
-| Resilience       | `httpx`, `tenacity`, custom circuit breaker |
-| Observability    | `structlog` + optional LangSmith            |
-| Pkg / venv       | `uv`                                        |
+| Layer            | Choice                                                                  |
+| ---------------- | ----------------------------------------------------------------------- |
+| Language         | Python 3.12                                                             |
+| Web              | FastAPI + uvicorn                                                       |
+| Orchestration    | LangGraph (`astream_events(version="v2")`)                              |
+| LLMs             | OpenAI via `langchain-openai`                                           |
+| CRM              | HubSpot (real) + stub fallback, switched via `CRM_PROVIDER`             |
+| ORM / migrations | SQLAlchemy 2.0 async + Alembic                                          |
+| Database         | SQLite (local + Fly Volume in prod, mounted at `/data`)                 |
+| Resilience       | `asyncio.wait_for` timeouts, `tenacity` retries, custom circuit breaker |
+| Observability    | `structlog` + optional LangSmith via `LANGSMITH_API_KEY`                |
+| Pkg / venv       | `uv`                                                                    |
 
 ## Quick start
+
+Local dev runs on port **8000**. The deployed Fly container runs on **8080**
+(both are normal — Dockerfile + `fly.toml` set the prod port).
 
 ```bash
 cd server
@@ -53,18 +58,21 @@ terminator.
 
 ## Endpoints
 
-| Method | Path                     | Purpose                                                        |
-| ------ | ------------------------ | -------------------------------------------------------------- |
-| GET    | `/health`                | Liveness + CRM provider status + configured model names        |
-| GET    | `/learners`              | Lightweight list of learners (backs the FE picker)             |
-| GET    | `/learner/{id}`          | Resolve a `LearnerProfile` via the active CRM client           |
-| GET    | `/conversations`         | A learner's conversations (sidebar). Query: `?learner_id=…&limit=50` |
-| GET    | `/conversations/{id}`    | Full conversation with messages + per-message telemetry        |
-| PATCH  | `/conversations/{id}`    | Rename a conversation. Body: `{"title": "…"}`                  |
-| DELETE | `/conversations/{id}`    | Delete a conversation (cascades to messages); 204 on success   |
-| POST   | `/chat`                  | SSE stream: `status`, `delta`, `error`, `final`, `done` events |
+| Method | Path                  | Purpose                                                              |
+| ------ | --------------------- | -------------------------------------------------------------------- |
+| GET    | `/health`             | Liveness + CRM provider status + configured model names              |
+| GET    | `/learners`           | Lightweight list of learners (backs the FE picker)                   |
+| GET    | `/learner/{id}`       | Resolve a `LearnerProfile` via the active CRM client                 |
+| GET    | `/conversations`      | A learner's conversations (sidebar). Query: `?learner_id=…&limit=50` |
+| GET    | `/conversations/{id}` | Full conversation with messages + per-message telemetry              |
+| PATCH  | `/conversations/{id}` | Rename a conversation. Body: `{"title": "…"}`                        |
+| DELETE | `/conversations/{id}` | Delete a conversation (cascades to messages); 204 on success         |
+| POST   | `/chat`               | SSE stream: `status`, `delta`, `error`, `final`, `done` events       |
 
 ## Switching CRM provider
+
+The **deployed** environment uses real HubSpot. The **local default** uses
+the stub (no HubSpot setup required to clone-and-run).
 
 ```bash
 # Real HubSpot — requires the developer-portal setup in RFC §4.6
@@ -115,18 +123,19 @@ server/
 │   ├── orchestrator/
 │   │   ├── graph.py               # LangGraph wiring + routing
 │   │   ├── state.py               # OrchestratorState (TypedDict + reducers)
-│   │   ├── nodes/                 # load_context, plan, synthesize, persist, title
+│   │   ├── nodes/                 # load_context, plan, discovery_agent, career_agent, synthesize, persist (+ async title)
 │   │   └── agents/                # discovery, career
 │   ├── db/                        # SQLAlchemy models, session, repository
 │   ├── data/                      # programs.json, careers.json, learners.json
 │   ├── schemas/                   # Pydantic: LearnerProfile, ChatRequest, events
-│   └── observability/tracing.py   # structlog + LangSmith opt-in
+│   └── observability/tracing.py   # structlog + optional LangSmith via env var
 ├── alembic/                       # migrations
 ├── evals/
 │   ├── golden_dataset.jsonl       # labelled routing + quality cases
 │   └── run_evals.py               # routing accuracy + LLM-as-judge harness
 ├── tests/
-├── Dockerfile
+├── Dockerfile                     # binds to port 8080 (Fly target)
+├── fly.toml                       # Fly.io deployment config
 ├── pyproject.toml
 └── .env.example
 ```

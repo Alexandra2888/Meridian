@@ -8,6 +8,17 @@ The design rationale lives in [`docs/rfc.md`](docs/rfc.md). This README is opera
 
 ---
 
+## Live
+
+| Surface | URL                                                                                       |
+| ------- | ----------------------------------------------------------------------------------------- |
+| **App** | [https://meridian-one-mu.vercel.app](https://meridian-one-mu.vercel.app)                  |
+| **API** | [https://meridian-g-q4wg.fly.dev](https://meridian-g-q4wg.fly.dev) (`/health` for status) |
+
+The deployed app runs against real HubSpot (5 seeded learner contacts) with SQLite on a Fly Volume. Open the URL, pick a learner, ask the compound query above — the trace panel renders the orchestration live.
+
+---
+
 ## Architecture
 
 ```mermaid
@@ -38,7 +49,7 @@ flowchart LR
     PE --> DB
 ```
 
-Five LangGraph nodes. Discovery and Career run in parallel when the planner chooses `both`. Only the synthesizer's tokens reach the SSE wire — internal agent outputs stay server-side so the learner sees one coherent response, not three concatenated ones.
+Six LangGraph nodes. Discovery and Career run in parallel when the planner chooses `both`. Only the synthesizer's tokens reach the SSE wire — internal agent outputs stay server-side so the learner sees one coherent response, not three concatenated ones. A seventh `title` task runs async after the response is delivered, off the streaming wire.
 
 See [`docs/rfc.md`](docs/rfc.md) §4 for the full architecture rationale (why LangGraph, why SSE, model-per-role split, CRM resilience).
 
@@ -53,13 +64,15 @@ See [`docs/rfc.md`](docs/rfc.md) §4 for the full architecture rationale (why La
 | `server/evals/` | Golden dataset + `run_evals.py` (routing accuracy + LLM-as-judge)     |
 | `docs/`         | `rfc.md` — full design RFC, decisions + alternatives considered       |
 
-What's stubbed vs real:
+What's real vs stubbed:
 
-| Surface                            | Default                                  | Switch to real                                  |
-| ---------------------------------- | ---------------------------------------- | ----------------------------------------------- |
-| LLM (planner, agents, synthesizer) | OpenAI — **real**                        | n/a                                             |
-| CRM                                | Stub (5 seeded learners, deterministic)  | `CRM_PROVIDER=hubspot` + `HUBSPOT_ACCESS_TOKEN` |
-| Database                           | SQLite file at `server/data/meridian.db` | `DB_URL=postgresql+asyncpg://…`                 |
+| Surface                            | Deployed (production path)             | Local default (clone-and-run)            |
+| ---------------------------------- | -------------------------------------- | ---------------------------------------- |
+| LLM (planner, agents, synthesizer) | OpenAI — **real**                      | OpenAI — **real**                        |
+| CRM                                | HubSpot — **real** (5 seeded contacts) | Stub (5 seeded learners, deterministic)  |
+| Database                           | SQLite on Fly Volume at `/data`        | SQLite file at `server/data/meridian.db` |
+
+The stub CRM is included for offline development and deterministic evals; the deployed app uses the real HubSpot API end-to-end. Switch locally via `CRM_PROVIDER=hubspot` + `HUBSPOT_ACCESS_TOKEN`.
 
 ---
 
@@ -84,7 +97,7 @@ curl http://localhost:8000/health
 curl http://localhost:8000/learner/stub-001
 ```
 
-See [`server/README.md`](server/README.md) for the full endpoint table, CRM provider switch, and layout.
+See [`server/README.md`](server/README.md) for the full endpoint table, CRM provider switch, and layout. (Note: local dev binds port 8000; the Fly container binds 8080 — both are normal.)
 
 ### 2. Client (`localhost:3000`)
 
@@ -120,6 +133,8 @@ Results land in three places:
 - The `eval_runs` table (per-case scores, routing decisions, latency, judge reasoning in `extra` JSON)
 - stdout summary + non-zero exit when routing accuracy < threshold — usable as a CI gate
 
+**Current scores (v1, 15-case golden):** routing accuracy **87%**, mean response quality **4.60/5**. Two known misses categorised in `evals/results/`: one labelling ambiguity (program-comparison queries can route to either `discovery` or `both`) and one conservative routing (planner asks for clarification on bare job titles). Both have one-line v2 fixes documented in the memo.
+
 The dataset breakdown: 5 discovery, 5 career, 3 compound, 2 edge (off-topic + ambiguous). Stub CRM so the run is reproducible and free of HubSpot rate limits.
 
 What v2 would add: human-review sampling (5% of real traffic, captured back into the dataset), regression gate in GitHub Actions (block merges on >3pp drop), per-agent evals isolated from orchestration, weekly drift canary against gpt-4o silent updates. RFC §7 has the full plan.
@@ -138,9 +153,9 @@ The Playwright suite spawns both servers via its `webServer` config and reuses a
 
 ---
 
-## Productionizing at Nexford scale (~10k learners and growing)
+## Productionizing at big scale (~10k learners and growing)
 
-Meridian's orchestration layer and CRM integration are production-shaped already; the gaps are scale, security, durability, and operational maturity — not foundational re-architecture. The migration path: **(1)** Migrate SQLite → Postgres (Supabase/Neon/self-hosted) — existing Alembic migrations run against the new DB, dump-and-restore data, change `DB_URL`; application code unchanged. This unlocks horizontal autoscaling, transactional backups, row-level security for multi-tenancy. **(2)** Add **Redis** for conversation-context caching, intent-classifier result caching for repeat queries, and HubSpot response caching to stay well under rate limits. **(3)** Wire **LangSmith** for production tracing (the in-app trace panel covers v1; LangSmith adds team-shared traces, historical search, routing-accuracy drift alerts) and **Sentry** for error tracking. **(4)** **CI eval gate** in GitHub Actions running `evals.run_evals` so routing-accuracy regressions block merges. **(5)** **PII redaction** at the gateway before any learner data reaches LLM providers. **(6)** **Auth** via Auth0 / Supabase Auth with row-level security on `conversations` + `messages`. **(7)** **Per-tenant rate limiting** for institutions serving partner schools. **(8)** Replace Fly free tier with a paid org, autoscaling tied to request volume, staging + canary deploys. **(9)** **Durability** — Litestream for any SQLite service, or managed-Postgres backups with point-in-time recovery + multi-region replicas. Estimated effort: **2-3 weeks for one engineer**, mostly security hardening and observability — the orchestration architecture itself is production-shaped already.
+Meridian's orchestration layer and CRM integration are production-shaped already; the gaps are scale, security, durability, and operational maturity — not foundational re-architecture. The migration path: **(1)** Migrate SQLite → Postgres (Supabase/Neon/self-hosted) — existing Alembic migrations run against the new DB, dump-and-restore data, change `DB_URL`; application code unchanged. This unlocks horizontal autoscaling, transactional backups, row-level security for multi-tenancy. **(2)** Add **Redis** for conversation-context caching, intent-classifier result caching for repeat queries, and HubSpot response caching to stay well under rate limits. **(3)** Promote **LangSmith** to a hard production dependency (the env-var hook is wired in v1; v2 adds team-shared traces, historical search, routing-accuracy drift alerts) and add **Sentry** for error tracking. **(4)** **CI eval gate** in GitHub Actions running `evals.run_evals` so routing-accuracy regressions block merges. **(5)** **PII redaction** at the gateway before any learner data reaches LLM providers. **(6)** **Auth** via Auth0 / Supabase Auth with row-level security on `conversations` + `messages`. **(7)** **Per-tenant rate limiting** for institutions serving partner schools. **(8)** Replace Fly free tier with a paid org, autoscaling tied to request volume, staging + canary deploys. **(9)** **Durability** — Litestream for any SQLite service, or managed-Postgres backups with point-in-time recovery + multi-region replicas. Estimated effort: **2-3 weeks for one engineer**, mostly security hardening and observability — the orchestration architecture itself is production-shaped already.
 
 See RFC §10 for the long-form version with cost projections and §8 for the top-three production risks (cost, hallucination, integration brittleness) and their mitigations.
 
